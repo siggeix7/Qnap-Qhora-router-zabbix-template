@@ -15,7 +15,7 @@ zabbix_export:
         - name: Templates/Network devices
       macros:
         - macro: '{$QROUTER.URL}'
-          value: 'https://10.77.71.254'
+          value: ''
           description: 'QuRouter base URL.'
         - macro: '{$QROUTER.USER}'
           value: ''
