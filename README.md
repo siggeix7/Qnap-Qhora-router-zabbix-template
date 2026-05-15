@@ -1,180 +1,66 @@
-# QNAP QuRouter Zabbix Template
+# Sources
 
-Template Zabbix 7.0 per monitorare router QNAP QuRouter tramite REST API non documentate.
+Questa directory contiene la documentazione e gli strumenti usati per:
 
-Il template e stato sviluppato e testato su QNAP QHora-301W con firmware QuRouter `2.7.1.048`. Usa le API web esposte dal frontend QuRouter sotto `/miro/api/v1/` e `/miro/api/v2/`.
+1. Scoprire le REST API non documentate del QNAP QuRouter
+2. Provarle in modo sicuro (solo `GET`, eccetto il login)
+3. Progettare il template Zabbix 7.0
 
-## Compatibilita
+Tutti i file qui presenti sono stati sanificati e non contengono credenziali, IP reali, MAC address, serial number o altri dati sensibili.
 
-| Componente | Versione |
+## Struttura
+
+| File / Directory | Descrizione |
 | --- | --- |
-| Zabbix | 7.0 |
-| Router testato | QNAP QHora-301W |
-| Firmware testato | QuRouter 2.7.1.048 |
-| Metodo raccolta | REST API via HTTPS |
-| Autenticazione | Login locale + Bearer token |
+| `README.md` | Panoramica del metodo di reverse engineering |
+| `api-discovery.md` | Come sono stati scoperti gli endpoint API dal frontend QuRouter |
+| `zabbix-template-design.md` | Come e perche e stato progettato il template Zabbix |
+| `tools/` | Versioni sanificate degli script di discovery e probe |
 
-## File Principale
+## Come Sono State Scoperte Le API
 
-| File | Descrizione |
-| --- | --- |
-| `zabbix_template_qnap_qurouter_7.0.yaml` | Template importabile in Zabbix 7.0 |
+Il QuRouter non ha documentazione API pubblica. Il frontend web pero le usa tutte. Il metodo e stato:
 
-## Funzionalita
+1. Scaricare gli asset statici del frontend (HTML, JS, CSS) dal router
+2. Analizzare i bundle JavaScript minificati per trovare riferimenti agli endpoint `/miro/api/v1/` e `/miro/api/v2/`
+3. Ricostruire la mappa endpoint -> funzione frontend
+4. Provare ogni endpoint `GET` con autenticazione Bearer token
+5. Analizzare le risposte per schema e campi utili al monitoraggio
 
-- Login automatico su `/miro/api/v1/login`.
-- Raccolta dati tramite item master `SCRIPT`.
-- Dependent item per ridurre il numero di chiamate API.
-- Nessuno storico sul master JSON aggregato.
-- Monitoraggio multi-WAN.
-- Discovery porte Ethernet fisiche.
-- Discovery statistiche switch `swdev1..swdev6`.
-- Discovery bande Wi-Fi.
-- Trigger per stato API, Internet, WAN, porte, temperatura, memoria, firmware e reboot.
+Vedi `api-discovery.md` per i dettagli tecnici.
 
-## Metriche Monitorate
+## Come E Stato Progettato Il Template Zabbix
 
-| Area | Metriche |
-| --- | --- |
-| Sistema | uptime, CPU load, temperatura CPU, memoria totale/usata/percentuale |
-| Firmware | versione locale, ultima versione disponibile, upgrade disponibile |
-| Rete | stato Internet, QuWAN cloud agent, load balancing active tier |
-| Multi-WAN | stato link, IPv4, NCSI, throughput RX/TX |
-| Porte Ethernet | stato up/down, link rate, MAC, throughput RX/TX, packet rate RX/TX |
-| Switch | RX/TX byte rate, RX/TX errors, RX/TX dropped |
-| Wi-Fi | modalita Wi-Fi, canale e bandwidth per banda |
-| Client | numero totale client conosciuti |
-| Log | numero totale eventi |
+Il template usa un approccio "master + dependent items":
 
-## Import In Zabbix
+1. Un item master `SCRIPT` fa login e raccoglie tutte le risposte API in un unico JSON
+2. I dependent item estraggono i singoli valori tramite preprocessing JSONPath
+3. Le low-level discovery (LLD) rule scoprono dinamicamente WAN, porte Ethernet, switch e bande Wi-Fi
+4. I trigger prototypes generano allarmi per ogni entita scoperta
 
-1. Vai in `Data collection` > `Templates`.
-2. Clicca `Import`.
-3. Seleziona `zabbix_template_qnap_qurouter_7.0.yaml`.
-4. Importa il template.
-5. Associa il template all'host del router.
-6. Configura le macro host obbligatorie.
+Vedi `zabbix-template-design.md` per le decisioni di design.
 
-## Macro Obbligatorie
+## Strumenti
 
-| Macro | Esempio | Descrizione |
-| --- | --- | --- |
-| `{$QROUTER.URL}` | `https://192.168.1.1` | URL base del router |
-| `{$QROUTER.USER}` | `admin` | Username locale QuRouter |
-| `{$QROUTER.PASSWORD}` | secret | Password locale QuRouter, macro secret |
+Gli script in `tools/` sono versioni sanificate di quelli usati durante il reverse engineering. Per usarli:
 
-## Macro Opzionali
+```bash
+# 1. Crea un file credenziali (non committarlo mai)
+echo "username=tuo_user
+password=tua_password
+base_url=https://<ROUTER_IP>" > credentials.txt
 
-| Macro | Default | Descrizione |
-| --- | --- | --- |
-| `{$QROUTER.FORCE_LOGIN}` | `true` | Forza il login se esiste gia una sessione attiva |
-| `{$QROUTER.INTERVAL}` | `1m` | Intervallo raccolta dati |
-| `{$QROUTER.NODATA}` | `5m` | Timeout per trigger no-data |
-| `{$QROUTER.CLIENTS.MAX.WARN}` | `100` | Soglia warning numero client |
-| `{$QROUTER.CPU.LOAD.WARN}` | `80` | Soglia warning CPU load |
-| `{$QROUTER.CPU.TEMP.WARN}` | `80` | Soglia warning temperatura CPU |
-| `{$QROUTER.MEMORY.PUSED.WARN}` | `85` | Soglia warning memoria usata percentuale |
-| `{$QROUTER.REBOOT.UPTIME.MIN}` | `600` | Uptime sotto cui rilevare un reboot |
-| `{$QROUTER.QUWAN.AGENT.REQUIRED}` | `0` | Abilita trigger QuWAN agent down |
-| `{$QROUTER.WAN.LINK.REQUIRED}` | `1` | Abilita trigger link down per WAN |
-| `{$QROUTER.PORT.LINK.REQUIRED}` | `1` | Abilita trigger link down per porte WAN |
-| `{$QROUTER.ETH.LINK.REQUIRED}` | `0` | Abilita trigger link down per porte Ethernet fisiche |
-| `{$QROUTER.WAN.NCSI.OK}` | `0` | Valore NCSI considerato sano |
-| `{$QROUTER.WAN.RX.MIN.WARN}` | `0` | Soglia minima RX WAN, disabilitata se 0 |
-| `{$QROUTER.WAN.TX.MIN.WARN}` | `0` | Soglia minima TX WAN, disabilitata se 0 |
-| `{$QROUTER.SWITCH.ERRORS.WARN}` | `0` | Abilita trigger su incremento errori/dropped switch |
+# 2. Scopri gli endpoint API
+python3 sources/tools/discover_qnap_api.py --base-url https://<ROUTER_IP>
 
-## Macro Contestuali
-
-Per abilitare trigger solo su porte specifiche puoi usare macro contestuali Zabbix.
-
-| Esempio | Effetto |
-| --- | --- |
-| `{$QROUTER.ETH.LINK.REQUIRED:"2"}=1` | La porta Ethernet 2 deve restare up |
-| `{$QROUTER.ETH.LINK.REQUIRED:"6"}=1` | La porta Ethernet 6 deve restare up |
-| `{$QROUTER.WAN.LINK.REQUIRED:"swdev5"}=1` | La WAN su `swdev5` deve restare up |
-| `{$QROUTER.PORT.LINK.REQUIRED:"5"}=1` | La porta WAN 5 deve restare up |
-| `{$QROUTER.WAN.RX.MIN.WARN:"5"}=100000` | Warning se RX medio porta WAN 5 scende sotto 100 KBps circa |
-
-## Porte QHora-301W
-
-Il template assegna etichette leggibili alle porte discoverate.
-
-| Porta | Etichetta |
-| --- | --- |
-| 1-4 | `1GbE port N` |
-| 5-6 | `10GbE port N` |
-
-Se il router espone un nome configurato, il template lo include nel nome item. Esempio: `10GbE port 5 - Open Fiber`.
-
-## Trigger Inclusi
-
-- API senza dati.
-- Endpoint API falliti.
-- Internet disconnesso.
-- CPU load alta.
-- Temperatura CPU alta.
-- Flag temperatura CPU high.
-- Memoria alta.
-- Reboot rilevato.
-- Cambio versione firmware.
-- Upgrade firmware disponibile.
-- Numero client alto.
-- QuWAN cloud agent non attivo, disabilitato di default.
-- Link WAN down.
-- NCSI WAN non sano.
-- Cambio IPv4 WAN.
-- Link porta WAN down.
-- Link porta Ethernet down, disabilitato di default.
-- Incremento errori/dropped switch, disabilitato di default.
-- Cambio canale o bandwidth Wi-Fi.
+# 3. Prova gli endpoint con autenticazione
+python3 sources/tools/authenticated_probe_qnap.py --base-url https://<ROUTER_IP> --credentials credentials.txt --zabbix-candidates
+```
 
 ## Note Di Sicurezza
 
-- Non committare file con credenziali, token o cookie.
-- Usa macro secret per `{$QROUTER.PASSWORD}`.
-- Il template usa `{$QROUTER.FORCE_LOGIN}=true` di default per ottenere sempre un token API.
-- Il login forzato puo chiudere sessioni web QuRouter gia aperte.
-- Le API QuRouter usate non sono documentate ufficialmente da QNAP e potrebbero cambiare con aggiornamenti firmware.
-
-## Endpoint Usati
-
-| Endpoint | Uso |
-| --- | --- |
-| `/miro/api/v1/login` | Login e token |
-| `/miro/api/v1/debugmode/information` | CPU, memoria, uptime, firmware |
-| `/miro/api/v1/cloud_service` | Stato cloud service |
-| `/miro/api/v1/connection_status` | Stato connessioni |
-| `/miro/api/v1/quwan/deployment_progress` | Stato deployment QuWAN |
-| `/miro/api/v1/quwan/status` | Stato QuWAN |
-| `/miro/api/v2/system/machine_info` | Informazioni router |
-| `/miro/api/v2/network_status` | Stato Internet |
-| `/miro/api/v2/system/hardware_status` | Temperatura e uptime |
-| `/miro/api/v2/network/ports` | Configurazione porte |
-| `/miro/api/v2/network/ports_status` | Stato porte e throughput |
-| `/miro/api/v2/debugmode/port_statistic` | Contatori switch |
-| `/miro/api/v2/network/wan/status` | Stato WAN |
-| `/miro/api/v2/clients` | Client |
-| `/miro/api/v2/firmware` | Firmware |
-| `/miro/api/v2/load_balancing_status` | Multi-WAN/load balancing |
-| `/miro/api/v2/ddns/info` | DDNS |
-| `/miro/api/v2/wireless/status` | Wi-Fi |
-| `/miro/api/v2/wireless/band/status` | Bande Wi-Fi |
-| `/miro/api/v2/wireless/vap/status` | VAP Wi-Fi |
-| `/miro/api/v2/eventlogs` | Event log |
-
-## Troubleshooting
-
-| Problema | Possibile causa | Soluzione |
-| --- | --- | --- |
-| Login OK ma nessun token | Sessione QuRouter gia attiva | Imposta `{$QROUTER.FORCE_LOGIN}=true` |
-| `Token is invalid` | Token scaduto o login fallito | Verifica macro user/password e connettivita |
-| Nessun dato sul master | Script fallito | Controlla `Latest data` e log Zabbix server/proxy |
-| Falsi positivi link Ethernet | Porta non sempre usata | Lascia `{$QROUTER.ETH.LINK.REQUIRED}=0` o usa macro contestuali |
-| Falsi positivi NCSI | Valore sano diverso dal default | Regola `{$QROUTER.WAN.NCSI.OK}` |
-
-## Stato Del Progetto
-
-Template creato tramite reverse engineering del frontend QuRouter e validato con raccolta dati reale su QHora-301W.
-
-Contributi, test su altri modelli QNAP e pull request sono benvenuti.
+- Questi endpoint API **non sono documentati ufficialmente da QNAP** e potrebbero cambiare con aggiornamenti firmware
+- Usare solo `GET` per il monitoraggio. Qualsiasi `POST`/`PUT`/`DELETE` puo modificare la configurazione del router
+- Il login con `force=true` chiude le sessioni web eventualmente gia aperte
+- Non committare mai file con credenziali, token o cookie
+- I file JSON generati dai probe contengono dati sensibili della tua rete: non pubblicarli
