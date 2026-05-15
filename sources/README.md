@@ -51,26 +51,37 @@ password=tua_password
 base_url=https://<ROUTER_IP>" > credentials.txt
 
 # 2. Scopri gli endpoint API
-python3 sources/tools/discover_qnap_api.py --base-url https://<ROUTER_IP>
+python3 sources/tools/discover_qnap_api.py --base-url https://<ROUTER_IP> --output-dir ~/qrouter_exports/discovery
 
 # 3. Prova gli endpoint con autenticazione
-python3 sources/tools/authenticated_probe_qnap.py --base-url https://<ROUTER_IP> --credentials credentials.txt --zabbix-candidates
+python3 sources/tools/authenticated_probe_qnap.py --base-url https://<ROUTER_IP> --credentials credentials.txt --output-dir ~/qrouter_exports/probe --zabbix-candidates
 
 # 4. Esporta uno snapshot Markdown della configurazione del router
 python3 sources/tools/export_qrouter_config_md.py
 
-# Oppure passando gia URL e utente, con le altre opzioni richieste via prompt
-python3 sources/tools/export_qrouter_config_md.py --base-url https://<ROUTER_IP> --username admin --extended-discovery
+# Oppure passando gia URL, utente e cartella output
+python3 sources/tools/export_qrouter_config_md.py --base-url https://<ROUTER_IP> --username admin --output-dir ~/qrouter_exports --extended-discovery
+
+# Se ometti --output-dir in modalita interattiva, lo script chiede la cartella al prompt
 ```
 
 ### Export Configurazione Markdown
 
-`export_qrouter_config_md.py` esegue un login locale QuRouter, interroga endpoint API `GET` e genera due file in `sources/artifacts/`:
+`export_qrouter_config_md.py` esegue un login locale QuRouter, interroga endpoint API `GET` e genera due file nella cartella scelta al prompt o passata con `--output-dir`:
 
-- `qrouter_config_<host>_<timestamp>.md`: report Markdown leggibile con sintesi, tabelle e JSON redatto
-- `qrouter_config_<host>_<timestamp>.json`: raccolta JSON redatta degli endpoint interrogati
+- `qrouter_config_<host>_<timestamp>.md`: report Markdown leggibile organizzato per sistema, WAN, LAN/VLAN/bridge, DHCP, client, Wi-Fi, NAT/routing e sicurezza
+- `qrouter_config_<host>_<timestamp>.json`: raccolta JSON completa degli endpoint interrogati, senza redazione dei campi di configurazione
 
-La modalita interattiva chiede IP/URL del router, username, password, se forzare il login e se eseguire la discovery estesa degli endpoint dal frontend. La discovery estesa scarica gli asset del frontend QuRouter e aggiunge altri endpoint `GET` rilevati, escludendo path dinamici, instabili o con parole associate ad azioni potenzialmente modificanti.
+La modalita interattiva chiede IP/URL del router, username, password, cartella di output, se forzare il login e se eseguire la discovery estesa degli endpoint dal frontend. Se la cartella non viene indicata, in modalita non interattiva il default e `~/qrouter_exports`, fuori dal repository. La discovery estesa scarica anche i chunk JavaScript dinamici del frontend QuRouter e aggiunge altri endpoint `GET` rilevati, escludendo path dinamici, instabili o con parole associate ad azioni potenzialmente modificanti.
+
+Quando usi `--extended-discovery`, nella stessa cartella di output vengono create anche:
+
+- `raw/`: copia locale degli asset frontend scaricati dal router, inclusi HTML, JavaScript e CSS
+- `artifacts/`: JSON intermedi della discovery, come endpoint trovati e risposte HTTP del frontend
+
+Queste directory sono necessarie per analizzare le API non documentate, ma non vengono piu generate dentro il repository. Possono contenere dettagli del router e della rete: trattale come dati privati.
+
+Di default il Markdown non include blocchi JSON raw: le risposte complete sono nel file `.json` affiancato. Se serve includere anche il JSON completo nel Markdown si puo usare `--include-raw-json`.
 
 Il report e uno snapshot documentale utile per change tracking e riconfigurazione manuale futura; non e un backup ufficiale ripristinabile.
 
@@ -80,4 +91,4 @@ Il report e uno snapshot documentale utile per change tracking e riconfigurazion
 - Usare solo `GET` per il monitoraggio. Qualsiasi `POST`/`PUT`/`DELETE` puo modificare la configurazione del router
 - Il login con `force=true` chiude le sessioni web eventualmente gia aperte
 - Non committare mai file con credenziali, token o cookie
-- I file Markdown e JSON generati dai probe/export contengono dati sensibili della tua rete: non pubblicarli
+- I file Markdown e JSON generati dai probe/export contengono dati sensibili della tua rete, inclusi campi di configurazione non redatti: non pubblicarli

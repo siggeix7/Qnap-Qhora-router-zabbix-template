@@ -12,7 +12,7 @@ Usage:
     base_url=https://<ROUTER_IP>" > credentials.txt
 
     # Run the probe
-    python3 authenticated_probe_qnap.py --base-url https://<ROUTER_IP> --credentials credentials.txt --zabbix-candidates
+    python3 authenticated_probe_qnap.py --base-url https://<ROUTER_IP> --credentials credentials.txt --output-dir ~/qrouter_exports/probe --zabbix-candidates
 
 WARNING: This script performs a POST login request and multiple GET requests
 against the router. It does NOT perform any PUT, DELETE, or configuration-changing
@@ -39,7 +39,9 @@ import discover_qnap_api as discovery
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ARTIFACTS = ROOT / "artifacts"
+DEFAULT_OUTPUT_DIR_TEXT = "~/qrouter_exports/probe"
+DEFAULT_OUTPUT_DIR = Path(DEFAULT_OUTPUT_DIR_TEXT).expanduser()
+ARTIFACTS = DEFAULT_OUTPUT_DIR / "artifacts"
 DEFAULT_BASE_URL = "https://<ROUTER_IP>"
 DEFAULT_CREDENTIALS = ROOT / "credentials.txt"
 ZABBIX_CANDIDATES = [
@@ -72,6 +74,15 @@ KNOWN_UNSTABLE_PATHS = {
 
 SECRET_KEY_RE = re.compile(r"(password|passwd|pass|token|secret|key|sid|session|credential|authorization|psk)", re.I)
 SENSITIVE_VALUE_RE = re.compile(r"^[A-Za-z0-9_./+=:-]{24,}$")
+
+
+def set_output_dir(output_dir: Path) -> None:
+    """Set where generated probe artifacts and discovery raw data are read/written."""
+    global ARTIFACTS
+    root = output_dir.expanduser()
+    ARTIFACTS = root / "artifacts"
+    if hasattr(discovery, "set_output_dir"):
+        discovery.set_output_dir(root)
 
 
 def parse_credentials(path: Path) -> dict[str, Any]:
@@ -338,6 +349,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--credentials", type=Path, default=DEFAULT_CREDENTIALS)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help=f"directory for probe artifacts and discovery raw data, default: {DEFAULT_OUTPUT_DIR_TEXT}")
     parser.add_argument("--force", action="store_true", help="force login if the router reports an existing session")
     parser.add_argument("--login-only", action="store_true")
     parser.add_argument("--zabbix-candidates", action="store_true", help="probe only a conservative monitoring-oriented endpoint list")
@@ -345,9 +357,12 @@ def main() -> int:
     parser.add_argument("--delay", type=float, default=0.25, help="delay between GET requests in seconds")
     args = parser.parse_args()
 
+    set_output_dir(args.output_dir)
+
     creds = parse_credentials(args.credentials)
     base_url = creds.get("base_url") or args.base_url.rstrip("/")
     force = bool(args.force or creds.get("force"))
+    print(f"output_dir={args.output_dir.expanduser()}", flush=True)
     print("credentials=loaded fields=username,password" + (",base_url" if creds.get("base_url") else ""), flush=True)
     login_result = login(base_url, creds["username"], creds["password"], force=force)
     print(

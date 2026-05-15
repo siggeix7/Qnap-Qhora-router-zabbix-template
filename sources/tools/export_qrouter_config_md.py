@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Export a QNAP QuRouter configuration snapshot to Markdown.
 
-The script prompts for router URL/IP, username and password, performs the same
-local-account login used by the QuRouter web UI, then collects read-only GET API
-responses and writes a Markdown report plus a redacted JSON companion file.
+The script prompts for router URL/IP, username, password and output directory,
+performs the same local-account login used by the QuRouter web UI, then collects
+read-only GET API responses and writes a structured Markdown report plus a full
+JSON companion file.
 
 The output is intended as documentation for change tracking and future manual
 reconfiguration. It is not an official restorable backup.
@@ -28,7 +29,8 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ARTIFACTS = ROOT / "artifacts"
+DEFAULT_OUTPUT_DIR_TEXT = "~/qrouter_exports"
+DEFAULT_OUTPUT_DIR = Path(DEFAULT_OUTPUT_DIR_TEXT).expanduser()
 DEFAULT_TIMEOUT = 8.0
 DEFAULT_DELAY = 0.2
 
@@ -49,19 +51,51 @@ KNOWN_ENDPOINTS = [
     ApiEndpoint("deployment_progress", "QuWAN deployment progress", "/miro/api/v1/quwan/deployment_progress", "QuWAN"),
     ApiEndpoint("quwan_status", "QuWAN status", "/miro/api/v1/quwan/status", "QuWAN"),
     ApiEndpoint("machine_info", "Machine information", "/miro/api/v2/system/machine_info", "System"),
+    ApiEndpoint("operation_setting", "Operation mode", "/miro/api/v2/system/operation_setting", "System"),
+    ApiEndpoint("region_setting", "Region setting", "/miro/api/v2/system/region", "System"),
+    ApiEndpoint("device_name", "Device name", "/miro/api/v2/system/device_name", "System"),
     ApiEndpoint("network_status", "Internet status", "/miro/api/v2/network_status", "Network"),
     ApiEndpoint("hardware_status", "Hardware status", "/miro/api/v2/system/hardware_status", "System"),
+    ApiEndpoint("network_profiles", "Network profiles", "/miro/api/v2/network/profiles", "Network"),
     ApiEndpoint("ports_config", "Network ports configuration", "/miro/api/v2/network/ports", "Ports"),
     ApiEndpoint("ports_status", "Network ports status", "/miro/api/v2/network/ports_status", "Ports"),
+    ApiEndpoint("ports_mac_addr", "Network ports MAC addresses", "/miro/api/v2/network/ports_mac_addr", "Ports"),
+    ApiEndpoint("lan_config", "LAN configuration", "/miro/api/v2/network/lan", "Network"),
+    ApiEndpoint("vlan_interfaces", "VLAN interfaces", "/miro/api/v2/network/vlanif", "Network"),
+    ApiEndpoint("vlan_status", "VLAN interface status", "/miro/api/v2/network/vlanif_status", "Network"),
+    ApiEndpoint("bridges", "Bridge interfaces", "/miro/api/v2/network/bridge", "Network"),
+    ApiEndpoint("bridge_status", "Bridge status", "/miro/api/v2/network/bridge_status", "Network"),
+    ApiEndpoint("network_settings", "Network settings", "/miro/api/v2/network/settings", "Network"),
+    ApiEndpoint("dhcp_clients", "DHCP clients and reservations", "/miro/api/v2/network/dhcp_client", "DHCP"),
+    ApiEndpoint("available_lan_interfaces", "Available LAN interfaces", "/miro/api/v2/network/available_lan_interfaces", "Network"),
+    ApiEndpoint("available_wan_interfaces", "Available WAN interfaces", "/miro/api/v2/network/available_wan_interfaces", "Network"),
     ApiEndpoint("port_statistic", "Switch port statistics", "/miro/api/v2/debugmode/port_statistic", "Ports"),
     ApiEndpoint("wan_status", "WAN status", "/miro/api/v2/network/wan/status", "WAN"),
     ApiEndpoint("clients", "Known clients", "/miro/api/v2/clients", "Clients"),
     ApiEndpoint("firmware", "Firmware", "/miro/api/v2/firmware", "System"),
+    ApiEndpoint("firmware_schedule", "Firmware schedule", "/miro/api/v2/firmware/schedule", "System"),
     ApiEndpoint("load_balancing_status", "Load balancing status", "/miro/api/v2/load_balancing_status", "WAN"),
     ApiEndpoint("ddns_info", "DDNS information", "/miro/api/v2/ddns/info", "Network"),
+    ApiEndpoint("ddns_setting", "DDNS setting", "/miro/api/v2/ddns/setting", "Network"),
+    ApiEndpoint("ddns_wan_status", "DDNS WAN status", "/miro/api/v2/ddns/wan_status", "Network"),
+    ApiEndpoint("nat_alg", "NAT ALG", "/miro/api/v2/nat/alg", "NAT"),
+    ApiEndpoint("nat_dmz", "NAT DMZ", "/miro/api/v2/nat/dmz", "NAT"),
+    ApiEndpoint("nat_port_forwarding", "NAT port forwarding", "/miro/api/v2/nat/port_forwarding", "NAT"),
+    ApiEndpoint("routing_ipv4", "IPv4 static routes", "/miro/api/v2/routing/ipv4", "Routing"),
+    ApiEndpoint("routing_ipv6", "IPv6 static routes", "/miro/api/v2/routing/ipv6", "Routing"),
+    ApiEndpoint("policy_route", "Policy routes", "/miro/api/v2/policy-route", "Routing"),
+    ApiEndpoint("access_setting", "Access setting", "/miro/api/v2/access_setting", "Security"),
+    ApiEndpoint("blocked_clients", "Blocked clients", "/miro/api/v2/blocklist", "Security"),
+    ApiEndpoint("service_ports", "Custom service ports", "/miro/api/v2/service_ports/custom", "Security"),
+    ApiEndpoint("certificate_info", "Certificate information", "/miro/api/v2/certificate/info", "Security"),
     ApiEndpoint("wireless_status", "Wireless status", "/miro/api/v2/wireless/status", "Wireless"),
+    ApiEndpoint("wireless_profile", "Wireless profile", "/miro/api/v2/wireless/profile", "Wireless"),
+    ApiEndpoint("wireless_band", "Wireless band settings", "/miro/api/v2/wireless/band/setting", "Wireless"),
     ApiEndpoint("wireless_band_status", "Wireless band status", "/miro/api/v2/wireless/band/status", "Wireless"),
+    ApiEndpoint("vap_setting", "Wireless VAP settings", "/miro/api/v2/wireless/vap/setting", "Wireless"),
     ApiEndpoint("vap_status", "Wireless VAP status", "/miro/api/v2/wireless/vap/status", "Wireless"),
+    ApiEndpoint("wps_setting", "WPS setting", "/miro/api/v2/wireless/wps/setting", "Wireless"),
+    ApiEndpoint("wps_status", "WPS status", "/miro/api/v2/wireless/wps/status", "Wireless"),
     ApiEndpoint("eventlogs", "Event logs", "/miro/api/v2/eventlogs", "Logs"),
 ]
 
@@ -92,26 +126,6 @@ DANGEROUS_PATH_WORDS = {
     "upgrade",
 }
 
-SENSITIVE_KEY_CONTAINS = (
-    "password",
-    "passwd",
-    "passphrase",
-    "token",
-    "secret",
-    "session",
-    "credential",
-    "authorization",
-    "cookie",
-    "privatekey",
-    "sharedkey",
-    "encryptionkey",
-    "apikey",
-    "accesskey",
-    "refreshtoken",
-)
-SENSITIVE_KEY_EXACT = {"key", "psk", "pwd", "sid"}
-
-
 def normalize_base_url(value: str) -> str:
     value = value.strip().rstrip("/")
     if not value:
@@ -122,6 +136,13 @@ def normalize_base_url(value: str) -> str:
     if not parsed.hostname:
         raise ValueError(f"invalid router URL/IP: {value}")
     return value
+
+
+def normalize_output_dir(value: str | Path) -> Path:
+    text = str(value).strip()
+    if not text:
+        raise ValueError("output directory is required")
+    return Path(text).expanduser()
 
 
 def prompt_text(label: str, default: str | None = None) -> str:
@@ -217,29 +238,6 @@ def login(
     }
 
 
-def normalized_key(key: Any) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(key).lower())
-
-
-def is_sensitive_key(key: Any) -> bool:
-    norm = normalized_key(key)
-    if norm in SENSITIVE_KEY_EXACT:
-        return True
-    if norm.endswith("key") and norm not in {"keyid", "keyindex", "monkey"}:
-        return True
-    return any(part in norm for part in SENSITIVE_KEY_CONTAINS)
-
-
-def redact(value: Any, parent_key: Any | None = None) -> Any:
-    if parent_key is not None and is_sensitive_key(parent_key):
-        return "<redacted>"
-    if isinstance(value, dict):
-        return {str(key): redact(item, key) for key, item in value.items()}
-    if isinstance(value, list):
-        return [redact(item, parent_key) for item in value]
-    return value
-
-
 def is_safe_config_get_path(path: str) -> bool:
     if path in KNOWN_UNSTABLE_PATHS:
         return False
@@ -257,13 +255,23 @@ def slug_from_path(path: str) -> str:
     return slug or "endpoint"
 
 
-def discover_extra_endpoints(base_url: str) -> tuple[list[ApiEndpoint], dict[str, Any]]:
+def discover_extra_endpoints(base_url: str, output_dir: Path) -> tuple[list[ApiEndpoint], dict[str, Any]]:
     try:
         import discover_qnap_api as discovery
     except Exception as exc:
         return [], {"error": f"could not import discover_qnap_api: {exc}"}
 
-    stats: dict[str, Any] = {"downloaded_assets": 0, "discovered_endpoints": 0, "discovered_operations": 0, "selected_extra": 0}
+    if hasattr(discovery, "set_output_dir"):
+        discovery.set_output_dir(output_dir)
+
+    stats: dict[str, Any] = {
+        "downloaded_assets": 0,
+        "discovered_endpoints": 0,
+        "discovered_operations": 0,
+        "selected_extra": 0,
+        "raw_dir": str(output_dir / "raw"),
+        "artifacts_dir": str(output_dir / "artifacts"),
+    }
     downloaded = discovery.crawl_assets(base_url)
     endpoints = discovery.extract_endpoints_from_js()
     operations = discovery.extract_operations(endpoints)
@@ -334,14 +342,13 @@ def collect_endpoint(
         "elapsed_ms": int((time.time() - start) * 1000),
     }
     if isinstance(parsed, dict):
-        safe_response = redact(parsed)
         entry["error_code"] = parsed.get("error_code")
         entry["error_message"] = parsed.get("error_message")
-        entry["response"] = safe_response
-        if isinstance(safe_response, dict) and "result" in safe_response:
-            entry["result"] = safe_response["result"]
+        entry["response"] = parsed
+        if "result" in parsed:
+            entry["result"] = parsed["result"]
     elif parsed is not None:
-        entry["response"] = redact(parsed)
+        entry["response"] = parsed
     elif raw:
         entry["body_preview"] = raw.decode("utf-8", errors="replace")[:1000]
     return entry
@@ -527,6 +534,569 @@ def list_length(value: Any) -> int | None:
     return None
 
 
+def endpoint_by_name(collected: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {str(item.get("name")): item for item in collected}
+
+
+def endpoint_result(by_name: dict[str, dict[str, Any]], name: str) -> Any:
+    item = by_name.get(name)
+    return item.get("result") if item else None
+
+
+def endpoint_ok(item: dict[str, Any]) -> bool:
+    return item.get("status") == 200 and item.get("error_code") in (0, None) and not item.get("error")
+
+
+def as_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        for key in (
+            "clientsData",
+            "eventLogList",
+            "data",
+            "items",
+            "list",
+            "rules",
+            "routes",
+            "wan",
+            "lan",
+            "vlan",
+            "bridge",
+            "profiles",
+            "portStatistics",
+        ):
+            item = value.get(key)
+            if isinstance(item, list):
+                return item
+    return []
+
+
+def value_at(value: Any, path: str, default: Any = "") -> Any:
+    current = value
+    for part in path.split("."):
+        if isinstance(current, dict):
+            current = current.get(part)
+        else:
+            return default
+    return default if current is None else current
+
+
+def pick_first(value: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        item = value_at(value, key)
+        if item not in (None, "", []):
+            return item
+    return ""
+
+
+def csv_value(value: Any) -> str:
+    if isinstance(value, list):
+        return ", ".join(compact_value(item, max_len=120) for item in value)
+    return compact_value(value, max_len=220)
+
+
+def render_table(
+    title: str,
+    rows: list[dict[str, Any]],
+    columns: list[tuple[str, str]],
+    max_rows: int,
+    empty: str = "_Nessun dato raccolto._",
+) -> list[str]:
+    lines = [f"### {title}", ""]
+    if not rows:
+        lines.extend([empty, ""])
+        return lines
+    lines.append("| " + " | ".join(label for label, _ in columns) + " |")
+    lines.append("| " + " | ".join("---" for _ in columns) + " |")
+    for row in rows[:max_rows]:
+        lines.append("| " + " | ".join(md_escape(value_at(row, selector)) for _, selector in columns) + " |")
+    if len(rows) > max_rows:
+        overflow = [f"... {len(rows) - max_rows} altre righe nel JSON completo"] + [""] * (len(columns) - 1)
+        lines.append("| " + " | ".join(md_escape(item) for item in overflow) + " |")
+    lines.append("")
+    return lines
+
+
+def interface_ip(config: dict[str, Any]) -> str:
+    address = config.get("ip4Address") or config.get("ip") or ""
+    prefix = config.get("ip4Prefix")
+    if address and prefix not in (None, ""):
+        return f"{address}/{prefix}"
+    return str(address)
+
+
+def dhcp_service(config: dict[str, Any]) -> dict[str, Any]:
+    service = config.get("dhcpService")
+    return service if isinstance(service, dict) else {}
+
+
+def dhcp_gateway(service: dict[str, Any]) -> Any:
+    if service.get("defaultGatewayIp"):
+        return service.get("defaultGatewayIp")
+    routers = service.get("routers")
+    if isinstance(routers, list):
+        return csv_value(routers)
+    return routers or ""
+
+
+def dhcp_reserved_count(service: dict[str, Any]) -> int:
+    reserved = service.get("reservedIps")
+    return len(reserved) if isinstance(reserved, list) else 0
+
+
+def interface_base_row(source: str, item: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    service = dhcp_service(config)
+    return {
+        "source": source,
+        "type": item.get("type") or config.get("type") or "lan",
+        "id": pick_first(item, "portName", "vlanIfId", "bridgeId", "interfaceId", "name"),
+        "vlanId": item.get("vlanId", ""),
+        "name": pick_first(item, "name", "description", "label"),
+        "description": pick_first(item, "description", "label"),
+        "enabled": config.get("enabled", item.get("enabled", "")),
+        "portsTagged": csv_value(item.get("tags", [])),
+        "portsUntagged": csv_value(item.get("untags", [])),
+        "ip4Type": config.get("ip4Type", ""),
+        "ip4": interface_ip(config),
+        "mtu": config.get("mtu", item.get("mtu", "")),
+        "dhcpType": service.get("serviceType", ""),
+        "dhcpRange": format_range(service.get("startIp"), service.get("endIp")),
+        "dhcpLease": service.get("leaseTime", ""),
+        "dhcpDns": csv_value(service.get("dnsServers", [])),
+        "dhcpGateway": dhcp_gateway(service),
+        "reservedCount": dhcp_reserved_count(service),
+    }
+
+
+def format_range(start: Any, end: Any) -> str:
+    if start and end:
+        return f"{start} - {end}"
+    return str(start or end or "")
+
+
+def iter_lan_interfaces(by_name: dict[str, dict[str, Any]]) -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
+    rows: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
+    ports = endpoint_result(by_name, "ports_config")
+    if isinstance(ports, dict):
+        for item in as_list(ports.get("lan")):
+            if isinstance(item, dict):
+                rows.append(("LAN fisica", item, item))
+
+    for source, endpoint_name, nested_key in (
+        ("VLAN", "vlan_interfaces", "lan"),
+        ("Bridge", "bridges", "lan"),
+    ):
+        for item in as_list(endpoint_result(by_name, endpoint_name)):
+            if not isinstance(item, dict):
+                continue
+            config = item.get(nested_key)
+            if isinstance(config, dict):
+                rows.append((source, item, config))
+
+    settings = endpoint_result(by_name, "network_settings")
+    if isinstance(settings, dict):
+        for source, key, nested_key in (
+            ("Settings LAN", "lan", None),
+            ("Settings VLAN", "vlan", "lan"),
+            ("Settings Bridge", "bridge", "lan"),
+        ):
+            for item in as_list(settings.get(key)):
+                if not isinstance(item, dict):
+                    continue
+                config = item.get(nested_key) if nested_key else item
+                if isinstance(config, dict):
+                    rows.append((source, item, config))
+    return dedupe_interface_configs(rows)
+
+
+def dedupe_interface_configs(rows: list[tuple[str, dict[str, Any], dict[str, Any]]]) -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
+    seen: set[tuple[str, str, str]] = set()
+    out: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
+    for source, item, config in rows:
+        canonical_source = source.replace("Settings ", "").replace("LAN fisica", "LAN")
+        key = (
+            canonical_source,
+            str(pick_first(item, "portName", "vlanIfId", "bridgeId", "interfaceId", "name")),
+            str(item.get("vlanId", "")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((source, item, config))
+    return out
+
+
+def collect_lan_rows(by_name: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    return [interface_base_row(source, item, config) for source, item, config in iter_lan_interfaces(by_name)]
+
+
+def collect_dhcp_reserved_rows(by_name: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for source, item, config in iter_lan_interfaces(by_name):
+        service = dhcp_service(config)
+        for reserved in as_list(service.get("reservedIps")):
+            if not isinstance(reserved, dict):
+                continue
+            base = interface_base_row(source, item, config)
+            rows.append(
+                {
+                    "interface": base.get("name") or base.get("id"),
+                    "source": source,
+                    "vlanId": base.get("vlanId"),
+                    "ip": pick_first(reserved, "ip", "ip4Address", "address"),
+                    "mac": pick_first(reserved, "mac", "macAddress", "macAddr"),
+                    "name": pick_first(reserved, "name", "hostname", "description"),
+                    "description": pick_first(reserved, "description", "comment"),
+                }
+            )
+    return sorted(rows, key=lambda row: (str(row.get("interface", "")), ip_sort_key(str(row.get("ip", "")))))
+
+
+def ip_sort_key(value: str) -> tuple[int, ...]:
+    parts = value.split("/")[0].split(".")
+    if len(parts) != 4:
+        return (999, 999, 999, 999)
+    try:
+        return tuple(int(part) for part in parts)
+    except ValueError:
+        return (999, 999, 999, 999)
+
+
+def collect_wan_rows(by_name: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    ports = endpoint_result(by_name, "ports_config")
+    status = endpoint_result(by_name, "wan_status")
+    status_by_port: dict[str, dict[str, Any]] = {}
+    if isinstance(status, dict):
+        for item in as_list(status.get("wan")):
+            if isinstance(item, dict):
+                ifname = str(item.get("ifname", ""))
+                match = re.search(r"(\d+)$", ifname)
+                if match:
+                    status_by_port[match.group(1)] = item
+
+    rows: list[dict[str, Any]] = []
+    if isinstance(ports, dict):
+        for item in as_list(ports.get("wan")):
+            if not isinstance(item, dict):
+                continue
+            port = str(item.get("portName", ""))
+            stat = status_by_port.get(port, {})
+            rows.append(
+                {
+                    "port": port,
+                    "name": pick_first(item, "name", "description"),
+                    "description": item.get("description", ""),
+                    "enabled": item.get("enabled", ""),
+                    "type": item.get("ip4Type", ""),
+                    "ip": interface_ip(item),
+                    "gateway": item.get("ip4Gateway", ""),
+                    "dns": csv_value(item.get("ip4DnsServers", [])),
+                    "realIp": stat.get("ip4RealAddress", ""),
+                    "link": stat.get("linkStatus", ""),
+                    "tier": item.get("tier", ""),
+                    "weight": item.get("weight", ""),
+                    "mtu": item.get("mtu", ""),
+                    "username": item.get("username", ""),
+                    "password": item.get("password", ""),
+                }
+            )
+    return rows
+
+
+def collect_dhcp_client_rows(by_name: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    result = endpoint_result(by_name, "dhcp_clients")
+    rows: list[dict[str, Any]] = []
+    for item in as_list(result):
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "interface": pick_first(item, "interfaceId", "interface", "interfaceName"),
+                "hostname": item.get("hostname", ""),
+                "ip": pick_first(item, "ip4Address", "ip", "dhcpIp"),
+                "mac": pick_first(item, "macAddress", "macAddr"),
+                "expires": pick_first(item, "expireTime", "expires", "leaseExpire"),
+                "lastAccess": pick_first(item, "lastAccess", "lastConnTime"),
+                "reserved": item.get("isReserved", ""),
+            }
+        )
+    return sorted(rows, key=lambda row: (str(row.get("interface", "")), ip_sort_key(str(row.get("ip", "")))))
+
+
+def collect_known_client_rows(by_name: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in as_list(endpoint_result(by_name, "clients")):
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "interface": item.get("interface", ""),
+                "hostname": item.get("hostname", ""),
+                "description": item.get("description", ""),
+                "ip": item.get("ip", ""),
+                "dhcpIp": item.get("dhcpIp", ""),
+                "mac": item.get("macAddr", ""),
+                "connection": item.get("connectionType", ""),
+                "status": item.get("status", ""),
+                "lastSeen": item.get("lastConnTime", ""),
+            }
+        )
+    return sorted(rows, key=lambda row: (str(row.get("interface", "")), ip_sort_key(str(row.get("ip") or row.get("dhcpIp") or ""))))
+
+
+def collect_port_rows(by_name: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    ports = endpoint_result(by_name, "ports_config")
+    status = endpoint_result(by_name, "ports_status")
+    status_rows: dict[str, dict[str, Any]] = {}
+    if isinstance(status, dict):
+        for key in ("lan", "wan", "occupied"):
+            for item in as_list(status.get(key)):
+                if isinstance(item, dict):
+                    port = str(item.get("portName") or item.get("port") or "")
+                    if port:
+                        status_rows[port] = item
+
+    rows: list[dict[str, Any]] = []
+    if isinstance(ports, dict):
+        for kind in ("wan", "lan"):
+            for item in as_list(ports.get(kind)):
+                if not isinstance(item, dict):
+                    continue
+                port = str(item.get("portName", ""))
+                stat = status_rows.get(port, {})
+                rows.append(
+                    {
+                        "port": port,
+                        "kind": kind.upper(),
+                        "name": pick_first(item, "name", "description"),
+                        "description": item.get("description", ""),
+                        "enabled": item.get("enabled", ""),
+                        "speed": item.get("speed", ""),
+                        "link": pick_first(stat, "linkStatus", "status"),
+                        "linkRate": pick_first(stat, "linkRate", "rate"),
+                        "mac": pick_first(stat, "mac", "macAddr", "macAddress"),
+                    }
+                )
+    return sorted(rows, key=lambda row: str(row.get("port", "")))
+
+
+def render_system_section(by_name: dict[str, dict[str, Any]]) -> list[str]:
+    machine = endpoint_result(by_name, "machine_info") if isinstance(endpoint_result(by_name, "machine_info"), dict) else {}
+    basic = endpoint_result(by_name, "basic_info") if isinstance(endpoint_result(by_name, "basic_info"), dict) else {}
+    hardware = endpoint_result(by_name, "hardware_status") if isinstance(endpoint_result(by_name, "hardware_status"), dict) else {}
+    firmware = endpoint_result(by_name, "firmware") if isinstance(endpoint_result(by_name, "firmware"), dict) else {}
+    mem_total = basic.get("mem_total")
+    mem_used = basic.get("mem_used")
+    mem_pct = ""
+    if isinstance(mem_total, (int, float)) and isinstance(mem_used, (int, float)) and mem_total:
+        mem_pct = round(mem_used * 100 / mem_total, 2)
+    rows = [
+        ("Hostname", machine.get("hostname", "")),
+        ("Device name", machine.get("deviceName", "")),
+        ("Model", machine.get("model", "")),
+        ("Firmware", pick_first(firmware, "currentVersion", "localFwInfo.0.version") or basic.get("firmware_version", "")),
+        ("Firmware build", basic.get("firmware_build_time", "")),
+        ("Operation mode", basic.get("operation_mode", "")),
+        ("Region", machine.get("region", "")),
+        ("Country", machine.get("countryCode", "")),
+        ("Language", machine.get("language", "")),
+        ("Uptime", pick_first(hardware, "upTime", "uptime") or basic.get("uptime", "")),
+        ("CPU load", basic.get("cpu_load", "")),
+        ("CPU temperature", pick_first(hardware, "cpuMetadata.temperature") or basic.get("cpu_temp", "")),
+        ("Memory total", mem_total or ""),
+        ("Memory used", mem_used or ""),
+        ("Memory used %", mem_pct),
+    ]
+    rows = [(key, value) for key, value in rows if value not in (None, "", [])]
+    return ["## Sistema", "", *render_kv_table(rows, max_rows=100), ""]
+
+
+def render_network_section(by_name: dict[str, dict[str, Any]], max_rows: int) -> list[str]:
+    lines = ["## Rete", ""]
+    network_status = endpoint_result(by_name, "network_status")
+    if isinstance(network_status, dict):
+        lines.extend(render_kv_table([("Internet connected", network_status.get("isInternetConnected", ""))], max_rows=20))
+        lines.append("")
+    lines.extend(
+        render_table(
+            "WAN",
+            collect_wan_rows(by_name),
+            [
+                ("Porta", "port"),
+                ("Nome", "name"),
+                ("Abilitata", "enabled"),
+                ("IPv4", "ip"),
+                ("Gateway", "gateway"),
+                ("DNS", "dns"),
+                ("IP reale", "realIp"),
+                ("Link", "link"),
+                ("Tier", "tier"),
+                ("Weight", "weight"),
+                ("Username", "username"),
+                ("Password", "password"),
+            ],
+            max_rows=max_rows,
+        )
+    )
+    lines.extend(
+        render_table(
+            "Interfacce LAN, VLAN e bridge",
+            collect_lan_rows(by_name),
+            [
+                ("Origine", "source"),
+                ("Tipo", "type"),
+                ("ID", "id"),
+                ("VLAN", "vlanId"),
+                ("Nome", "name"),
+                ("Descrizione", "description"),
+                ("Abilitata", "enabled"),
+                ("Tagged", "portsTagged"),
+                ("Untagged", "portsUntagged"),
+                ("IPv4 type", "ip4Type"),
+                ("IPv4", "ip4"),
+                ("MTU", "mtu"),
+            ],
+            max_rows=max_rows,
+        )
+    )
+    lines.extend(
+        render_table(
+            "Porte fisiche",
+            collect_port_rows(by_name),
+            [
+                ("Porta", "port"),
+                ("Tipo", "kind"),
+                ("Nome", "name"),
+                ("Descrizione", "description"),
+                ("Abilitata", "enabled"),
+                ("Speed config", "speed"),
+                ("Link", "link"),
+                ("Link rate", "linkRate"),
+                ("MAC", "mac"),
+            ],
+            max_rows=max_rows,
+        )
+    )
+    return lines
+
+
+def render_dhcp_section(by_name: dict[str, dict[str, Any]], max_rows: int) -> list[str]:
+    lines = ["## DHCP", ""]
+    lines.extend(
+        render_table(
+            "Servizi DHCP per interfaccia",
+            collect_lan_rows(by_name),
+            [
+                ("Interfaccia", "name"),
+                ("Origine", "source"),
+                ("VLAN", "vlanId"),
+                ("Service", "dhcpType"),
+                ("Range", "dhcpRange"),
+                ("Lease", "dhcpLease"),
+                ("Gateway", "dhcpGateway"),
+                ("DNS", "dhcpDns"),
+                ("Reserved IP", "reservedCount"),
+            ],
+            max_rows=max_rows,
+        )
+    )
+    lines.extend(
+        render_table(
+            "IP statici DHCP / reserved IP",
+            collect_dhcp_reserved_rows(by_name),
+            [
+                ("Interfaccia", "interface"),
+                ("Origine", "source"),
+                ("VLAN", "vlanId"),
+                ("IP", "ip"),
+                ("MAC", "mac"),
+                ("Nome", "name"),
+                ("Descrizione", "description"),
+            ],
+            max_rows=max_rows,
+            empty="_Nessuna reservation DHCP trovata negli endpoint LAN/VLAN/bridge raccolti._",
+        )
+    )
+    lines.extend(
+        render_table(
+            "Client DHCP",
+            collect_dhcp_client_rows(by_name),
+            [
+                ("Interfaccia", "interface"),
+                ("Hostname", "hostname"),
+                ("IP", "ip"),
+                ("MAC", "mac"),
+                ("Riservato", "reserved"),
+                ("Scadenza", "expires"),
+                ("Ultimo accesso", "lastAccess"),
+            ],
+            max_rows=max_rows,
+            empty="_Endpoint DHCP client non disponibile o senza dati._",
+        )
+    )
+    return lines
+
+
+def render_clients_section(by_name: dict[str, dict[str, Any]], max_rows: int) -> list[str]:
+    return [
+        "## Client",
+        "",
+        *render_table(
+            "Client conosciuti dal router",
+            collect_known_client_rows(by_name),
+            [
+                ("Interfaccia", "interface"),
+                ("Hostname", "hostname"),
+                ("Descrizione", "description"),
+                ("IP", "ip"),
+                ("DHCP IP", "dhcpIp"),
+                ("MAC", "mac"),
+                ("Connessione", "connection"),
+                ("Status", "status"),
+                ("Last seen", "lastSeen"),
+            ],
+            max_rows=max_rows,
+        ),
+    ]
+
+
+def render_wireless_section(by_name: dict[str, dict[str, Any]], max_rows: int) -> list[str]:
+    lines = ["## Wi-Fi", ""]
+    status = endpoint_result(by_name, "wireless_status")
+    if isinstance(status, dict):
+        lines.extend(render_kv_table(sorted(status.items()), max_rows=50))
+        lines.append("")
+    for title, endpoint_name, columns in (
+        ("Bande Wi-Fi configurate", "wireless_band", [("Band", "band"), ("Enabled", "enabled"), ("Channel", "channel"), ("Bandwidth", "bandwidth"), ("Mode", "mode")]),
+        ("Stato bande Wi-Fi", "wireless_band_status", [("Band", "band"), ("Channel", "channel"), ("Bandwidth", "bandwidth")]),
+        ("VAP / SSID configurati", "vap_setting", [("Type", "type"), ("Group", "vapGroupIdx"), ("SSID", "ssid"), ("Band", "band"), ("Enabled", "enabled"), ("VLAN", "vlanId"), ("Security", "security")]),
+        ("Stato VAP", "vap_status", [("Type", "type"), ("Group", "vapGroupIdx"), ("Band", "band"), ("Status", "status"), ("WPS", "supportWps")]),
+    ):
+        result = endpoint_result(by_name, endpoint_name)
+        rows = [row for row in as_list(result) if isinstance(row, dict)]
+        lines.extend(render_table(title, rows, columns, max_rows=max_rows))
+    return lines
+
+
+def render_nat_routing_section(by_name: dict[str, dict[str, Any]], max_rows: int) -> list[str]:
+    lines = ["## NAT e routing", ""]
+    for endpoint_name in ("nat_alg", "nat_dmz", "nat_port_forwarding", "routing_ipv4", "routing_ipv6", "policy_route"):
+        item = by_name.get(endpoint_name)
+        if item:
+            lines.extend(render_endpoint_markdown(item, include_raw=False, max_rows=max_rows))
+    return lines
+
+
+def render_services_security_section(by_name: dict[str, dict[str, Any]], max_rows: int) -> list[str]:
+    lines = ["## Servizi e sicurezza", ""]
+    for endpoint_name in ("ddns_info", "ddns_setting", "ddns_wan_status", "access_setting", "blocked_clients", "service_ports", "certificate_info"):
+        item = by_name.get(endpoint_name)
+        if item:
+            lines.extend(render_endpoint_markdown(item, include_raw=False, max_rows=max_rows))
+    return lines
+
+
 def render_markdown(
     base_url: str,
     login_result: dict[str, Any],
@@ -536,9 +1106,10 @@ def render_markdown(
     max_rows: int,
 ) -> str:
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S %z")
-    ok = [item for item in collected if item.get("status") == 200 and item.get("error_code") in (0, None) and not item.get("error")]
+    ok = [item for item in collected if endpoint_ok(item)]
     failed = [item for item in collected if item not in ok]
     safe_login = {key: value for key, value in login_result.items() if key != "access_token"}
+    by_name = endpoint_by_name(collected)
 
     lines = [
         "# QuRouter Configuration Export",
@@ -549,7 +1120,8 @@ def render_markdown(
         "",
         "This report was generated from read-only QuRouter API GET endpoints after one login POST.",
         "It is a documentation snapshot for change tracking and manual reconfiguration, not an official restorable backup.",
-        "The file can contain private network data. Do not publish it without reviewing it first.",
+        "The Markdown file is organized by configuration area. The companion JSON contains the full collected API responses.",
+        "No router configuration fields are redacted by this exporter.",
         "",
         "## Collection Summary",
         "",
@@ -570,19 +1142,63 @@ def render_markdown(
         lines.append("")
 
     lines.extend(render_high_level_summary(collected))
+    lines.extend(render_system_section(by_name))
+    lines.extend(render_network_section(by_name, max_rows=max_rows))
+    lines.extend(render_dhcp_section(by_name, max_rows=max_rows))
+    lines.extend(render_clients_section(by_name, max_rows=max_rows))
+    lines.extend(render_wireless_section(by_name, max_rows=max_rows))
+    lines.extend(render_nat_routing_section(by_name, max_rows=max_rows))
+    lines.extend(render_services_security_section(by_name, max_rows=max_rows))
 
     if failed:
         lines.extend(["## Failed Or Partial Endpoints", ""])
         lines.extend(render_kv_table([(item.get("path"), item.get("error") or item.get("error_message") or item.get("status")) for item in failed], max_rows=200))
         lines.append("")
 
-    groups: dict[str, list[dict[str, Any]]] = {}
-    for item in collected:
-        groups.setdefault(str(item.get("group") or "Other"), []).append(item)
-
-    for group in sorted(groups):
-        lines.extend([f"## {group}", ""])
-        for item in groups[group]:
+    handled = {
+        "basic_info",
+        "machine_info",
+        "operation_setting",
+        "region_setting",
+        "device_name",
+        "hardware_status",
+        "firmware",
+        "network_status",
+        "ports_config",
+        "ports_status",
+        "ports_mac_addr",
+        "lan_config",
+        "vlan_interfaces",
+        "vlan_status",
+        "bridges",
+        "bridge_status",
+        "network_settings",
+        "dhcp_clients",
+        "wan_status",
+        "clients",
+        "wireless_status",
+        "wireless_band",
+        "wireless_band_status",
+        "vap_setting",
+        "vap_status",
+        "nat_alg",
+        "nat_dmz",
+        "nat_port_forwarding",
+        "routing_ipv4",
+        "routing_ipv6",
+        "policy_route",
+        "ddns_info",
+        "ddns_setting",
+        "ddns_wan_status",
+        "access_setting",
+        "blocked_clients",
+        "service_ports",
+        "certificate_info",
+    }
+    other = [item for item in collected if item.get("name") not in handled]
+    if other:
+        lines.extend(["## Altri endpoint raccolti", ""])
+        for item in other:
             lines.extend(render_endpoint_markdown(item, include_raw=include_raw, max_rows=max_rows))
 
     return "\n".join(lines).rstrip() + "\n"
@@ -613,7 +1229,7 @@ def render_endpoint_markdown(item: dict[str, Any], include_raw: bool, max_rows: 
     if item.get("body_preview"):
         lines.extend(["", "Body preview:", "", "```text", str(item.get("body_preview")), "```"])
     if include_raw and "response" in item:
-        lines.extend(["", "Raw redacted JSON:", "", "```json"])
+        lines.extend(["", "Raw JSON:", "", "```json"])
         lines.append(json.dumps(item["response"], ensure_ascii=False, indent=2, sort_keys=True))
         lines.extend(["```", ""])
     else:
@@ -663,7 +1279,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-url", help="Router URL or IP. IP values are normalized to https://<IP>.")
     parser.add_argument("--username", help="Local QuRouter username.")
     parser.add_argument("--password", help="Local QuRouter password. Prefer interactive prompt to avoid shell history.")
-    parser.add_argument("--output-dir", type=Path, default=ARTIFACTS, help="Directory for Markdown and JSON output.")
+    parser.add_argument("--output-dir", type=Path, help=f"Directory for Markdown and JSON output. Defaults to {DEFAULT_OUTPUT_DIR_TEXT} in non-interactive mode.")
     parser.add_argument("--output-prefix", help="Output file prefix. Defaults to qrouter_config_<host>_<timestamp>.")
     parser.add_argument("--extended-discovery", dest="extended_discovery", action="store_true", default=None, help="Download frontend assets and probe extra discovered safe GET endpoints.")
     parser.add_argument("--no-extended-discovery", dest="extended_discovery", action="store_false", help="Only collect the curated endpoint set.")
@@ -673,18 +1289,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="HTTP timeout in seconds.")
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY, help="Delay between GET requests in seconds.")
     parser.add_argument("--max-table-rows", type=int, default=100, help="Maximum rows per Markdown summary table.")
-    parser.add_argument("--no-raw-json", action="store_true", help="Do not include raw redacted JSON blocks in the Markdown file.")
+    parser.add_argument("--include-raw-json", action="store_true", help="Also include full raw JSON blocks in the Markdown file. The JSON companion is always written.")
     parser.add_argument("--non-interactive", action="store_true", help="Fail instead of prompting for missing values.")
     return parser.parse_args()
 
 
-def resolve_runtime_options(args: argparse.Namespace) -> tuple[str, str, str, bool, bool]:
+def resolve_runtime_options(args: argparse.Namespace) -> tuple[str, str, str, Path, bool, bool]:
     interactive = not args.non_interactive and sys.stdin.isatty()
     base_url = args.base_url or (prompt_text("Router IP o URL", "https://192.168.1.1") if interactive else "")
     username = args.username or (prompt_text("Username") if interactive else "")
     password = args.password or (getpass.getpass("Password: ") if interactive else "")
     if not base_url or not username or not password:
         raise ValueError("base URL, username and password are required")
+
+    if args.output_dir is not None:
+        output_dir = normalize_output_dir(args.output_dir)
+    elif interactive:
+        output_dir = normalize_output_dir(prompt_text("Cartella output report", DEFAULT_OUTPUT_DIR_TEXT))
+    else:
+        output_dir = DEFAULT_OUTPUT_DIR
 
     force_login = args.force_login
     if force_login is None:
@@ -694,13 +1317,13 @@ def resolve_runtime_options(args: argparse.Namespace) -> tuple[str, str, str, bo
     if extended_discovery is None:
         extended_discovery = prompt_bool("Eseguire discovery estesa degli endpoint dal frontend?", True) if interactive else False
 
-    return normalize_base_url(base_url), username, password, bool(force_login), bool(extended_discovery)
+    return normalize_base_url(base_url), username, password, output_dir, bool(force_login), bool(extended_discovery)
 
 
 def main() -> int:
     args = parse_args()
     try:
-        base_url, username, password, force_login, extended_discovery = resolve_runtime_options(args)
+        base_url, username, password, output_dir, force_login, extended_discovery = resolve_runtime_options(args)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -727,7 +1350,7 @@ def main() -> int:
     extra_endpoints: list[ApiEndpoint] = []
     if extended_discovery:
         print("Discovery estesa frontend/API...", flush=True)
-        extra_endpoints, discovery_stats = discover_extra_endpoints(base_url)
+        extra_endpoints, discovery_stats = discover_extra_endpoints(base_url, output_dir)
         if discovery_stats.get("error"):
             print(f"warning: {discovery_stats['error']}", file=sys.stderr)
         else:
@@ -749,13 +1372,13 @@ def main() -> int:
 
     prefix = args.output_prefix or safe_output_prefix(base_url)
     md_path, json_path = write_outputs(
-        args.output_dir,
+        output_dir,
         prefix,
         base_url,
         login_result,
         collected,
         discovery_stats,
-        include_raw=not args.no_raw_json,
+        include_raw=args.include_raw_json,
         max_rows=args.max_table_rows,
     )
     ok = sum(1 for item in collected if item.get("status") == 200 and item.get("error_code") in (0, None) and not item.get("error"))

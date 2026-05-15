@@ -6,9 +6,10 @@ the QuRouter web UI, then reconstructs the API endpoint map from the minified
 frontend JavaScript.
 
 Usage:
-    python3 discover_qnap_api.py --base-url https://<ROUTER_IP>
+    python3 discover_qnap_api.py --base-url https://<ROUTER_IP> --output-dir ~/qrouter_exports/discovery
 
 The script only performs GET requests and does not require authentication.
+Generated raw assets and artifacts are written outside the repository by default.
 """
 
 from __future__ import annotations
@@ -29,9 +30,19 @@ from typing import Any, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RAW = ROOT / "raw"
-ARTIFACTS = ROOT / "artifacts"
+DEFAULT_OUTPUT_DIR_TEXT = "~/qrouter_exports/discovery"
+DEFAULT_OUTPUT_DIR = Path(DEFAULT_OUTPUT_DIR_TEXT).expanduser()
+RAW = DEFAULT_OUTPUT_DIR / "raw"
+ARTIFACTS = DEFAULT_OUTPUT_DIR / "artifacts"
 DEFAULT_BASE_URL = "https://<ROUTER_IP>"
+
+
+def set_output_dir(output_dir: Path) -> None:
+    """Set where generated raw frontend assets and discovery artifacts go."""
+    global RAW, ARTIFACTS
+    root = output_dir.expanduser()
+    RAW = root / "raw"
+    ARTIFACTS = root / "artifacts"
 
 
 class AssetParser(html.parser.HTMLParser):
@@ -139,6 +150,18 @@ def crawl_assets(base_url: str) -> list[str]:
             seen.add(asset_path)
             queue.append(asset_path)
 
+    def enqueue_referenced_assets(data: bytes, current_path: str) -> None:
+        text = data.decode("utf-8", errors="ignore")
+        patterns = [
+            r'["\']((?:js|css)/[^"\']+\.(?:js|css))["\']',
+            r'import\(["\']\.\/([^"\']+\.(?:js|css))["\']\)',
+            r'from["\']\.\/([^"\']+\.(?:js|css))["\']',
+            r'import["\']\.\/([^"\']+\.(?:js|css))["\']',
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, text):
+                enqueue(match.group(1), current_path)
+
     for asset in parser.assets:
         enqueue(asset)
 
@@ -148,6 +171,11 @@ def crawl_assets(base_url: str) -> list[str]:
         url = base_url + asset_path
         local_path = safe_asset_path(asset_path)
         if local_path.exists():
+            if asset_path.endswith((".html", ".js", ".css")):
+                try:
+                    enqueue_referenced_assets(local_path.read_bytes(), asset_path)
+                except Exception:
+                    pass
             continue
         try:
             status, final_url, data, headers = fetch_text(url, timeout=6.0)
@@ -160,6 +188,8 @@ def crawl_assets(base_url: str) -> list[str]:
                     sub_parser.feed(data.decode("utf-8", errors="ignore"))
                     for sub_asset in sub_parser.assets:
                         enqueue(sub_asset, asset_path)
+                if asset_path.endswith((".html", ".js", ".css")):
+                    enqueue_referenced_assets(data, asset_path)
                 time.sleep(0.15)
         except Exception:
             pass
@@ -335,12 +365,16 @@ def probe_public_gets(base_url: str, endpoints: list[Endpoint], delay_seconds: f
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help=f"directory for raw assets and artifacts, default: {DEFAULT_OUTPUT_DIR_TEXT}")
     parser.add_argument("--probe", action="store_true", help="also probe public GET endpoints")
     parser.add_argument("--delay", type=float, default=0.2, help="delay between GET requests in seconds")
     args = parser.parse_args()
 
+    set_output_dir(args.output_dir)
+
     base_url = args.base_url.rstrip("/")
     print(f"base_url={base_url}", flush=True)
+    print(f"output_dir={args.output_dir.expanduser()}", flush=True)
 
     print("crawling frontend assets...", flush=True)
     downloaded = crawl_assets(base_url)
