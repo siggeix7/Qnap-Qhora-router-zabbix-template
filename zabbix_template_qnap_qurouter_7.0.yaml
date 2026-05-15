@@ -1,0 +1,1053 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b1a001
+      name: Templates/Network devices
+  templates:
+    - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b1a010
+      template: 'Template Net QNAP QuRouter REST API'
+      name: 'Template Net QNAP QuRouter REST API'
+      description: |
+        QNAP QuRouter REST API template for Zabbix 7.0.
+        Uses a Script master item: POST /miro/api/v1/login, then read-only GET calls with Authorization: Bearer <token>.
+        Configure host macros before enabling. The export does not contain real credentials.
+      groups:
+        - name: Templates/Network devices
+      macros:
+        - macro: '{$QROUTER.URL}'
+          value: 'https://10.77.71.254'
+          description: 'QuRouter base URL.'
+        - macro: '{$QROUTER.USER}'
+          value: ''
+          description: 'Local QuRouter username.'
+        - macro: '{$QROUTER.PASSWORD}'
+          value: ''
+          type: SECRET_TEXT
+          description: 'Local QuRouter password.'
+        - macro: '{$QROUTER.FORCE_LOGIN}'
+          value: 'true'
+          description: 'Force login to obtain a token when another session exists. May close active web UI sessions.'
+        - macro: '{$QROUTER.INTERVAL}'
+          value: '1m'
+          description: 'Master API polling interval.'
+        - macro: '{$QROUTER.CLIENTS.MAX.WARN}'
+          value: '100'
+          description: 'Warning threshold for known clients.'
+        - macro: '{$QROUTER.NODATA}'
+          value: '5m'
+          description: 'No-data interval for the master API item.'
+        - macro: '{$QROUTER.CPU.LOAD.WARN}'
+          value: '80'
+          description: 'Warning threshold for average CPU load.'
+        - macro: '{$QROUTER.CPU.TEMP.WARN}'
+          value: '80'
+          description: 'Warning threshold for average CPU temperature in Celsius.'
+        - macro: '{$QROUTER.MEMORY.PUSED.WARN}'
+          value: '85'
+          description: 'Warning threshold for memory utilization percentage.'
+        - macro: '{$QROUTER.REBOOT.UPTIME.MIN}'
+          value: '600'
+          description: 'Uptime below this value after a previous higher value is treated as a reboot.'
+        - macro: '{$QROUTER.QUWAN.AGENT.REQUIRED}'
+          value: '0'
+          description: 'Set to 1 to alert when the QuWAN cloud agent is not running.'
+        - macro: '{$QROUTER.WAN.LINK.REQUIRED}'
+          value: '1'
+          description: 'Default WAN link trigger switch. Set to 1 for multi-WAN routers where all discovered WAN interfaces should stay online. Override with context macros like {$QROUTER.WAN.LINK.REQUIRED:"wan1"}=0 if needed.'
+        - macro: '{$QROUTER.PORT.LINK.REQUIRED}'
+          value: '1'
+          description: 'Default WAN port link trigger switch. Override with context macros like {$QROUTER.PORT.LINK.REQUIRED:"1"}=0 if needed.'
+        - macro: '{$QROUTER.WAN.NCSI.OK}'
+          value: '0'
+          description: 'Expected NCSI status for healthy WAN interfaces. On the observed QHora-301W, 0 means healthy.'
+        - macro: '{$QROUTER.WAN.RX.MIN.WARN}'
+          value: '0'
+          description: 'Optional minimum RX throughput in Bps per WAN port. Leave 0 to disable low-traffic alerts.'
+        - macro: '{$QROUTER.WAN.TX.MIN.WARN}'
+          value: '0'
+          description: 'Optional minimum TX throughput in Bps per WAN port. Leave 0 to disable low-traffic alerts.'
+        - macro: '{$QROUTER.ETH.LINK.REQUIRED}'
+          value: '0'
+          description: 'Default Ethernet physical port link trigger switch. Use context macros like {$QROUTER.ETH.LINK.REQUIRED:"2"}=1 for required LAN ports.'
+        - macro: '{$QROUTER.SWITCH.ERRORS.WARN}'
+          value: '0'
+          description: 'Set to 1 to alert when switch port error or dropped counters increase.'
+      items:
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10001
+          name: 'QuRouter: API aggregate JSON'
+          type: SCRIPT
+          key: qrouter.api.aggregate
+          delay: '{$QROUTER.INTERVAL}'
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 30s
+          parameters:
+            - name: url
+              value: '{$QROUTER.URL}'
+            - name: username
+              value: '{$QROUTER.USER}'
+            - name: password
+              value: '{$QROUTER.PASSWORD}'
+            - name: force_login
+              value: '{$QROUTER.FORCE_LOGIN}'
+          params: |
+            var p = JSON.parse(value);
+            function fail(m) { throw 'QuRouter API: ' + m; }
+            function base(url) { if (!url) fail('missing URL'); return String(url).replace(/\/+$/, ''); }
+            function truthy(v) { return ['1','true','yes','y','si','s'].indexOf(String(v).toLowerCase()) !== -1; }
+            function utf8(s) {
+              var b = [];
+              for (var i = 0; i < s.length; i++) {
+                var c = s.charCodeAt(i);
+                if (c < 128) b.push(c);
+                else if (c < 2048) { b.push(192 | (c >> 6)); b.push(128 | (c & 63)); }
+                else if (c >= 55296 && c <= 56319) {
+                  i++; var n = s.charCodeAt(i); var cp = 65536 + (((c & 1023) << 10) | (n & 1023));
+                  b.push(240 | (cp >> 18)); b.push(128 | ((cp >> 12) & 63)); b.push(128 | ((cp >> 6) & 63)); b.push(128 | (cp & 63));
+                } else { b.push(224 | (c >> 12)); b.push(128 | ((c >> 6) & 63)); b.push(128 | (c & 63)); }
+              }
+              return b;
+            }
+            function b64(s) {
+              var ch = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+              var b = utf8(String(s)); var out = '';
+              for (var i = 0; i < b.length; i += 3) {
+                var b1 = b[i], b2 = i + 1 < b.length ? b[i + 1] : 0, b3 = i + 2 < b.length ? b[i + 2] : 0;
+                out += ch[b1 >> 2] + ch[((b1 & 3) << 4) | (b2 >> 4)] + (i + 1 < b.length ? ch[((b2 & 15) << 2) | (b3 >> 6)] : '=') + (i + 2 < b.length ? ch[b3 & 63] : '=');
+              }
+              return out;
+            }
+            function json(s, ctx) { try { return JSON.parse(s); } catch (e) { fail(ctx + ' returned non-JSON'); } }
+            function req(method, url, body, token) {
+              var r = new HttpRequest();
+              r.addHeader('Accept: application/json');
+              r.addHeader('Content-Type: application/json');
+              if (token) r.addHeader('Authorization: Bearer ' + token);
+              var response = method === 'POST' ? r.post(url, body) : r.get(url);
+              return {status: r.getStatus(), body: response};
+            }
+            function scrub(o) {
+              var re = /(username|user_name|password|passwd|token|secret|key|psk|sid|session|authorization|credential)/i;
+              if (o === null || o === undefined) return o;
+              if (Object.prototype.toString.call(o) === '[object Array]') { var a = []; for (var i = 0; i < o.length; i++) a.push(scrub(o[i])); return a; }
+              if (typeof o === 'object') { var c = {}, ks = Object.keys(o); for (var k = 0; k < ks.length; k++) c[ks[k]] = re.test(ks[k]) ? '<redacted>' : scrub(o[ks[k]]); return c; }
+              return o;
+            }
+            var url = base(p.url);
+            if (!p.username || !p.password) fail('missing username or password macro');
+            var login = req('POST', url + '/miro/api/v1/login', JSON.stringify({username: String(p.username), password: b64(String(p.password)), force: truthy(p.force_login), remember_me: false, qid_login: false}), null);
+            var lj = json(login.body, 'login');
+            if (lj.error_code !== 0) fail('login failed: HTTP ' + login.status + ', error_code=' + lj.error_code + ', message=' + lj.error_message);
+            var token = lj.result && lj.result.access_token;
+            if (!token) fail('login returned no token; had_session=' + (lj.result && lj.result.had_session) + '; set {$QROUTER.FORCE_LOGIN}=true');
+            var endpoints = {
+              basic_info: '/miro/api/v1/debugmode/information',
+              cloud_service: '/miro/api/v1/cloud_service',
+              connection_status: '/miro/api/v1/connection_status',
+              deployment_progress: '/miro/api/v1/quwan/deployment_progress',
+              quwan_status: '/miro/api/v1/quwan/status',
+              machine_info: '/miro/api/v2/system/machine_info',
+              network_status: '/miro/api/v2/network_status',
+              hardware_status: '/miro/api/v2/system/hardware_status',
+              ports_config: '/miro/api/v2/network/ports',
+              ports_status: '/miro/api/v2/network/ports_status',
+              port_statistic: '/miro/api/v2/debugmode/port_statistic',
+              wan_status: '/miro/api/v2/network/wan/status',
+              clients: '/miro/api/v2/clients',
+              firmware: '/miro/api/v2/firmware',
+              load_balancing_status: '/miro/api/v2/load_balancing_status',
+              ddns_info: '/miro/api/v2/ddns/info',
+              wireless_status: '/miro/api/v2/wireless/status',
+              wireless_band_status: '/miro/api/v2/wireless/band/status',
+              vap_status: '/miro/api/v2/wireless/vap/status',
+              eventlogs: '/miro/api/v2/eventlogs'
+            };
+            var out = {_meta: {success: 1, collected: 0, failed: 0, timestamp: Math.floor(Date.now() / 1000)}, login: {status: login.status, error_code: lj.error_code, had_session: !!lj.result.had_session}};
+            var names = Object.keys(endpoints);
+            for (var n = 0; n < names.length; n++) {
+              var name = names[n];
+              var r = req('GET', url + endpoints[name], null, token);
+              var j = scrub(json(r.body, name));
+              j._http_status = r.status;
+              out[name] = j;
+              if (r.status === 200 && j.error_code === 0) out._meta.collected++; else out._meta.failed++;
+            }
+            return JSON.stringify(out);
+          tags:
+            - tag: component
+              value: raw
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10002
+          name: 'QuRouter: API endpoints failed'
+          type: DEPENDENT
+          key: qrouter.api.failed
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          master_item:
+            key: qrouter.api.aggregate
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$._meta.failed']
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19010
+              expression: 'nodata(/Template Net QNAP QuRouter REST API/qrouter.api.failed,{$QROUTER.NODATA})=1'
+              name: 'QuRouter: No API data received'
+              priority: HIGH
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19001
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.api.failed)>0'
+              name: 'QuRouter: One or more API endpoints failed'
+              priority: WARNING
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10101
+          name: 'QuRouter: Device name'
+          type: DEPENDENT
+          key: qrouter.system.device_name
+          delay: '0'
+          history: 30d
+          trends: '0'
+          value_type: CHAR
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.machine_info.result.deviceName']
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10102
+          name: 'QuRouter: Model'
+          type: DEPENDENT
+          key: qrouter.system.model
+          delay: '0'
+          history: 30d
+          trends: '0'
+          value_type: CHAR
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.machine_info.result.model']
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10103
+          name: 'QuRouter: Internet connected'
+          type: DEPENDENT
+          key: qrouter.network.internet_connected
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: UNSIGNED
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.network_status.result.isInternetConnected']
+            - type: BOOL_TO_DECIMAL
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19002
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.network.internet_connected)=0'
+              name: 'QuRouter: Internet is disconnected'
+              priority: HIGH
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10201
+          name: 'QuRouter: CPU load'
+          type: DEPENDENT
+          key: qrouter.system.cpu_load
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: FLOAT
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.basic_info.result.cpu_load']
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19011
+              expression: 'avg(/Template Net QNAP QuRouter REST API/qrouter.system.cpu_load,15m)>{$QROUTER.CPU.LOAD.WARN}'
+              name: 'QuRouter: High CPU load'
+              priority: WARNING
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10202
+          name: 'QuRouter: CPU temperature'
+          type: DEPENDENT
+          key: qrouter.system.cpu_temperature
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: FLOAT
+          units: °C
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.hardware_status.result.cpuMetadata.temperature']
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19012
+              expression: 'avg(/Template Net QNAP QuRouter REST API/qrouter.system.cpu_temperature,10m)>{$QROUTER.CPU.TEMP.WARN}'
+              name: 'QuRouter: High CPU temperature'
+              priority: WARNING
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10203
+          name: 'QuRouter: CPU temperature high'
+          type: DEPENDENT
+          key: qrouter.system.cpu_temperature_high
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: UNSIGNED
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.hardware_status.result.cpuMetadata.temperatureHigh']
+            - type: BOOL_TO_DECIMAL
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19003
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.system.cpu_temperature_high)=1'
+              name: 'QuRouter: CPU temperature is high'
+              priority: WARNING
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10204
+          name: 'QuRouter: Memory total'
+          type: DEPENDENT
+          key: qrouter.system.memory.total
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: UNSIGNED
+          units: B
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.basic_info.result.mem_total']
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10205
+          name: 'QuRouter: Memory used'
+          type: DEPENDENT
+          key: qrouter.system.memory.used
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: UNSIGNED
+          units: B
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.basic_info.result.mem_used']
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10207
+          name: 'QuRouter: Memory utilization'
+          type: DEPENDENT
+          key: qrouter.system.memory.pused
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var root = JSON.parse(value);
+                  var r = (((root.basic_info || {}).result) || {});
+                  if (!r.mem_total) return null;
+                  return r.mem_used / r.mem_total * 100;
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19013
+              expression: 'avg(/Template Net QNAP QuRouter REST API/qrouter.system.memory.pused,15m)>{$QROUTER.MEMORY.PUSED.WARN}'
+              name: 'QuRouter: High memory utilization'
+              priority: WARNING
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10206
+          name: 'QuRouter: Uptime'
+          type: DEPENDENT
+          key: qrouter.system.uptime
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: FLOAT
+          units: s
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.hardware_status.result.upTime']
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19014
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.system.uptime)<{$QROUTER.REBOOT.UPTIME.MIN} and last(/Template Net QNAP QuRouter REST API/qrouter.system.uptime,#2)>={$QROUTER.REBOOT.UPTIME.MIN}'
+              name: 'QuRouter: Device has been restarted'
+              priority: INFO
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10301
+          name: 'QuRouter: Known clients total'
+          type: DEPENDENT
+          key: qrouter.clients.total
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: UNSIGNED
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.clients.result.totalItems']
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19004
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.clients.total)>{$QROUTER.CLIENTS.MAX.WARN}'
+              name: 'QuRouter: High number of known clients'
+              priority: WARNING
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10401
+          name: 'QuRouter: Firmware version'
+          type: DEPENDENT
+          key: qrouter.firmware.version
+          delay: '0'
+          history: 30d
+          trends: '0'
+          value_type: CHAR
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.basic_info.result.firmware_version']
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19015
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.firmware.version)<>last(/Template Net QNAP QuRouter REST API/qrouter.firmware.version,#2)'
+              name: 'QuRouter: Firmware version changed'
+              priority: INFO
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10402
+          name: 'QuRouter: Firmware upgrade available'
+          type: DEPENDENT
+          key: qrouter.firmware.upgrade_available
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: UNSIGNED
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.firmware.result.remoteFwInfo.isUpgradeAvailable']
+            - type: BOOL_TO_DECIMAL
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19005
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.firmware.upgrade_available)=1'
+              name: 'QuRouter: Firmware upgrade is available'
+              priority: INFO
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10403
+          name: 'QuRouter: Latest firmware version'
+          type: DEPENDENT
+          key: qrouter.firmware.latest_version
+          delay: '0'
+          history: 30d
+          trends: '0'
+          value_type: CHAR
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.firmware.result.remoteFwInfo.fwVer']
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10501
+          name: 'QuRouter: QuWAN cloud agent running'
+          type: DEPENDENT
+          key: qrouter.quwan.cloud_agent_running
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: UNSIGNED
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.quwan_status.result.cloudAgentRunning']
+            - type: BOOL_TO_DECIMAL
+          triggers:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19016
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.quwan.cloud_agent_running)=0 and {$QROUTER.QUWAN.AGENT.REQUIRED}=1'
+              name: 'QuRouter: QuWAN cloud agent is not running'
+              priority: WARNING
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10601
+          name: 'QuRouter: Load balancing active tier'
+          type: DEPENDENT
+          key: qrouter.load_balancing.active_tier
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: UNSIGNED
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.load_balancing_status.result.activeTier']
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10701
+          name: 'QuRouter: Wi-Fi mode'
+          type: DEPENDENT
+          key: qrouter.wireless.mode
+          delay: '0'
+          history: 30d
+          trends: '0'
+          value_type: CHAR
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.wireless_status.result.wifiMode']
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b10801
+          name: 'QuRouter: Event log total'
+          type: DEPENDENT
+          key: qrouter.eventlogs.total
+          delay: '0'
+          history: 30d
+          trends: 365d
+          value_type: UNSIGNED
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JSONPATH
+              parameters: ['$.eventlogs.result.total']
+      discovery_rules:
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12001
+          name: 'QuRouter: WAN interface discovery'
+          type: DEPENDENT
+          key: qrouter.discovery.wan
+          delay: '0'
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var root = JSON.parse(value);
+                  var arr = (((root.wan_status || {}).result || {}).wan || []);
+                  var cfg = (((root.ports_config || {}).result || {}).wan || []);
+                  var cfgByPort = {};
+                  for (var c = 0; c < cfg.length; c++) cfgByPort[String(cfg[c].portName)] = cfg[c];
+                  function speedClass(port) { return Number(port) >= 5 ? '10GbE' : '1GbE'; }
+                  function wanLabel(port, cfgItem) {
+                    var label = 'WAN ' + speedClass(port) + ' port ' + port;
+                    var name = cfgItem && (cfgItem.name || cfgItem.description);
+                    if (name) label += ' - ' + String(name);
+                    return label;
+                  }
+                  var data = [];
+                  for (var i = 0; i < arr.length; i++) {
+                    if (!arr[i].ifname) continue;
+                    var m = String(arr[i].ifname).match(/(\d+)$/);
+                    var port = m ? m[1] : String(arr[i].ifname);
+                    var cfgItem = cfgByPort[port] || {};
+                    data.push({
+                      '{#IFNAME}': String(arr[i].ifname),
+                      '{#WANPORT}': port,
+                      '{#WANIP}': String(arr[i].ip4Address || ''),
+                      '{#WANNAME}': String(cfgItem.name || cfgItem.description || ''),
+                      '{#WANLABEL}': wanLabel(port, cfgItem),
+                      '{#PORTSPEED}': speedClass(port)
+                    });
+                  }
+                  return JSON.stringify({data: data});
+          item_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12101
+              name: 'QuRouter {#WANLABEL}: Link status'
+              type: DEPENDENT
+              key: 'qrouter.wan.link_status[{#IFNAME}]'
+              delay: '0'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JSONPATH
+                  parameters: ['$.wan_status.result.wan[?(@.ifname=="{#IFNAME}")].linkStatus.first()']
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12102
+              name: 'QuRouter {#WANLABEL}: IPv4 address'
+              type: DEPENDENT
+              key: 'qrouter.wan.ip4[{#IFNAME}]'
+              delay: '0'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JSONPATH
+                  parameters: ['$.wan_status.result.wan[?(@.ifname=="{#IFNAME}")].ip4Address.first()']
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12103
+              name: 'QuRouter {#WANLABEL}: NCSI status'
+              type: DEPENDENT
+              key: 'qrouter.wan.ncsi[{#IFNAME}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JSONPATH
+                  parameters: ['$.wan_status.result.wan[?(@.ifname=="{#IFNAME}")].ncsiStat.first()']
+          trigger_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19101
+              expression: 'find(/Template Net QNAP QuRouter REST API/qrouter.wan.link_status[{#IFNAME}],,"iregexp","^(up|connected|online|link_up|1)$")=0 and {$QROUTER.WAN.LINK.REQUIRED:"{#IFNAME}"}=1'
+              name: 'QuRouter {#WANLABEL}: Link is down'
+              priority: HIGH
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19102
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.wan.ip4[{#IFNAME}])<>last(/Template Net QNAP QuRouter REST API/qrouter.wan.ip4[{#IFNAME}],#2)'
+              name: 'QuRouter {#WANLABEL}: IPv4 address changed'
+              priority: INFO
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19103
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.wan.ncsi[{#IFNAME}])<>{$QROUTER.WAN.NCSI.OK} and {$QROUTER.WAN.LINK.REQUIRED:"{#IFNAME}"}=1'
+              name: 'QuRouter {#WANLABEL}: NCSI status is not healthy'
+              priority: WARNING
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12002
+          name: 'QuRouter: WAN port throughput discovery'
+          type: DEPENDENT
+          key: qrouter.discovery.wan_ports
+          delay: '0'
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var root = JSON.parse(value);
+                  var arr = (((root.ports_status || {}).result || {}).wan || []);
+                  var cfg = (((root.ports_config || {}).result || {}).wan || []);
+                  var cfgByPort = {};
+                  for (var c = 0; c < cfg.length; c++) cfgByPort[String(cfg[c].portName)] = cfg[c];
+                  function speedClass(port) { return Number(port) >= 5 ? '10GbE' : '1GbE'; }
+                  function portDisplay(port) {
+                    var cfgItem = cfgByPort[String(port)] || {};
+                    var label = speedClass(port) + ' port ' + port;
+                    var name = cfgItem.name || cfgItem.description;
+                    if (name) label += ' - ' + String(name);
+                    return label;
+                  }
+                  var data = [];
+                  for (var i = 0; i < arr.length; i++) {
+                    if (!arr[i].portName) continue;
+                    data.push({
+                      '{#PORT}': String(arr[i].portName),
+                      '{#PORTDISPLAY}': portDisplay(arr[i].portName),
+                      '{#PORTSPEED}': speedClass(arr[i].portName)
+                    });
+                  }
+                  return JSON.stringify({data: data});
+          item_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12201
+              name: 'QuRouter WAN {#PORTDISPLAY}: Status'
+              type: DEPENDENT
+              key: 'qrouter.port.status[{#PORT}]'
+              delay: '0'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JSONPATH
+                  parameters: ['$.ports_status.result.wan[?(@.portName=="{#PORT}")].status.first()']
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12202
+              name: 'QuRouter WAN {#PORTDISPLAY}: RX throughput'
+              type: DEPENDENT
+              key: 'qrouter.port.throughput.rx[{#PORT}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              units: Bps
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JSONPATH
+                  parameters: ['$.ports_status.result.wan[?(@.portName=="{#PORT}")].throughputRx.first()']
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12203
+              name: 'QuRouter WAN {#PORTDISPLAY}: TX throughput'
+              type: DEPENDENT
+              key: 'qrouter.port.throughput.tx[{#PORT}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              units: Bps
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JSONPATH
+                  parameters: ['$.ports_status.result.wan[?(@.portName=="{#PORT}")].throughputTx.first()']
+          trigger_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19201
+              expression: 'find(/Template Net QNAP QuRouter REST API/qrouter.port.status[{#PORT}],,"iregexp","^(up|connected|online|link_up|1)$")=0 and {$QROUTER.PORT.LINK.REQUIRED:"{#PORT}"}=1'
+              name: 'QuRouter WAN {#PORTDISPLAY}: Link is down'
+              priority: HIGH
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19202
+              expression: 'avg(/Template Net QNAP QuRouter REST API/qrouter.port.throughput.rx[{#PORT}],10m)<{$QROUTER.WAN.RX.MIN.WARN:"{#PORT}"} and {$QROUTER.WAN.RX.MIN.WARN:"{#PORT}"}>0'
+              name: 'QuRouter WAN {#PORTDISPLAY}: RX throughput is below threshold'
+              priority: WARNING
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19203
+              expression: 'avg(/Template Net QNAP QuRouter REST API/qrouter.port.throughput.tx[{#PORT}],10m)<{$QROUTER.WAN.TX.MIN.WARN:"{#PORT}"} and {$QROUTER.WAN.TX.MIN.WARN:"{#PORT}"}>0'
+              name: 'QuRouter WAN {#PORTDISPLAY}: TX throughput is below threshold'
+              priority: WARNING
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12003
+          name: 'QuRouter: Wireless band discovery'
+          type: DEPENDENT
+          key: qrouter.discovery.wireless_bands
+          delay: '0'
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var root = JSON.parse(value);
+                  var arr = ((root.wireless_band_status || {}).result || []);
+                  var data = [];
+                  for (var i = 0; i < arr.length; i++) {
+                    if (!arr[i].band) continue;
+                    data.push({'{#BAND}': String(arr[i].band)});
+                  }
+                  return JSON.stringify({data: data});
+          item_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12301
+              name: 'QuRouter wireless {#BAND}: Channel'
+              type: DEPENDENT
+              key: 'qrouter.wireless.channel[{#BAND}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JSONPATH
+                  parameters: ['$.wireless_band_status.result[?(@.band=="{#BAND}")].channel.first()']
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12302
+              name: 'QuRouter wireless {#BAND}: Bandwidth'
+              type: DEPENDENT
+              key: 'qrouter.wireless.bandwidth[{#BAND}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              units: MHz
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JSONPATH
+                  parameters: ['$.wireless_band_status.result[?(@.band=="{#BAND}")].bandwidth.first()']
+          trigger_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19301
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.wireless.channel[{#BAND}])<>last(/Template Net QNAP QuRouter REST API/qrouter.wireless.channel[{#BAND}],#2)'
+              name: 'QuRouter wireless {#BAND}: Channel changed'
+              priority: INFO
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19302
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.wireless.bandwidth[{#BAND}])<>last(/Template Net QNAP QuRouter REST API/qrouter.wireless.bandwidth[{#BAND}],#2)'
+              name: 'QuRouter wireless {#BAND}: Bandwidth changed'
+              priority: INFO
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12004
+          name: 'QuRouter: Ethernet physical port discovery'
+          type: DEPENDENT
+          key: qrouter.discovery.eth_ports
+          delay: '0'
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var root = JSON.parse(value);
+                  var cfg = (((root.ports_config || {}).result) || {});
+                  var st = (((root.ports_status || {}).result) || {});
+                  var ports = {};
+                  function speedClass(port) { return Number(port) >= 5 ? '10GbE' : '1GbE'; }
+                  function add(portName, role, item) {
+                    if (!portName) return;
+                    portName = String(portName);
+                    if (!ports[portName]) ports[portName] = {'{#PORT}': portName, '{#PORTSPEED}': speedClass(portName)};
+                    if (role && (!ports[portName]['{#ROLE}'] || role !== 'occupied')) ports[portName]['{#ROLE}'] = role;
+                    if (item && item.name) ports[portName]['{#NAME}'] = String(item.name);
+                    if (item && item.description) ports[portName]['{#DESCRIPTION}'] = String(item.description);
+                  }
+                  function each(arr, role) {
+                    arr = arr || [];
+                    for (var i = 0; i < arr.length; i++) add(arr[i].portName, role, arr[i]);
+                  }
+                  each(cfg.wan, 'wan');
+                  each(cfg.lan, 'lan');
+                  each(st.wan, 'wan');
+                  each(st.lan, 'lan');
+                  each(st.vlan, 'vlan');
+                  each(st.occupied, 'occupied');
+                  var data = [];
+                  var keys = Object.keys(ports).sort(function(a, b) { return Number(a) - Number(b); });
+                  for (var k = 0; k < keys.length; k++) {
+                    var p = ports[keys[k]];
+                    var label = p['{#PORTSPEED}'] + ' port ' + p['{#PORT}'];
+                    if (p['{#NAME}']) label += ' - ' + p['{#NAME}'];
+                    if (p['{#DESCRIPTION}'] && p['{#DESCRIPTION}'] !== p['{#NAME}']) label += ' (' + p['{#DESCRIPTION}'] + ')';
+                    p['{#PORTDISPLAY}'] = label;
+                    data.push(p);
+                  }
+                  return JSON.stringify({data: data});
+          item_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12401
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: Status'
+              type: DEPENDENT
+              key: 'qrouter.eth.port.status[{#PORT}]'
+              delay: '0'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), port = '{#PORT}';
+                      var st = (((root.ports_status || {}).result) || {});
+                      function find(arr) { arr = arr || []; for (var i = 0; i < arr.length; i++) if (String(arr[i].portName) === port) return arr[i]; return null; }
+                      var item = find(st.wan) || find(st.occupied) || find(st.lan) || find(st.vlan);
+                      return item && item.status ? item.status : 'down';
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12402
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: Link rate'
+              type: DEPENDENT
+              key: 'qrouter.eth.port.link_rate[{#PORT}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              units: bps
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), port = '{#PORT}';
+                      var st = (((root.ports_status || {}).result) || {});
+                      function find(arr) { arr = arr || []; for (var i = 0; i < arr.length; i++) if (String(arr[i].portName) === port) return arr[i]; return null; }
+                      var item = find(st.wan) || find(st.occupied) || find(st.lan) || find(st.vlan);
+                      return item && item.linkRate ? item.linkRate : 0;
+                - type: MULTIPLIER
+                  parameters:
+                    - '1000000'
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12403
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: MAC address'
+              type: DEPENDENT
+              key: 'qrouter.eth.port.mac[{#PORT}]'
+              delay: '0'
+              history: 30d
+              trends: '0'
+              value_type: CHAR
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), port = '{#PORT}';
+                      var st = (((root.ports_status || {}).result) || {});
+                      function find(arr) { arr = arr || []; for (var i = 0; i < arr.length; i++) if (String(arr[i].portName) === port) return arr[i]; return null; }
+                      var item = find(st.wan) || find(st.occupied) || find(st.lan) || find(st.vlan);
+                      return item && item.mac ? item.mac : '';
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12404
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: RX throughput'
+              type: DEPENDENT
+              key: 'qrouter.eth.port.throughput.rx[{#PORT}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              units: Bps
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), port = '{#PORT}';
+                      var st = (((root.ports_status || {}).result) || {});
+                      function find(arr) { arr = arr || []; for (var i = 0; i < arr.length; i++) if (String(arr[i].portName) === port) return arr[i]; return null; }
+                      var item = find(st.wan) || find(st.occupied) || find(st.lan) || find(st.vlan);
+                      return item && item.throughputRx ? item.throughputRx : 0;
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12405
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: TX throughput'
+              type: DEPENDENT
+              key: 'qrouter.eth.port.throughput.tx[{#PORT}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              units: Bps
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), port = '{#PORT}';
+                      var st = (((root.ports_status || {}).result) || {});
+                      function find(arr) { arr = arr || []; for (var i = 0; i < arr.length; i++) if (String(arr[i].portName) === port) return arr[i]; return null; }
+                      var item = find(st.wan) || find(st.occupied) || find(st.lan) || find(st.vlan);
+                      return item && item.throughputTx ? item.throughputTx : 0;
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12406
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: RX packets rate'
+              type: DEPENDENT
+              key: 'qrouter.eth.port.packets.rx[{#PORT}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              units: pps
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), port = '{#PORT}';
+                      var st = (((root.ports_status || {}).result) || {});
+                      function find(arr) { arr = arr || []; for (var i = 0; i < arr.length; i++) if (String(arr[i].portName) === port) return arr[i]; return null; }
+                      var item = find(st.wan) || find(st.occupied) || find(st.lan) || find(st.vlan);
+                      return item && item.throughputPktRx ? item.throughputPktRx : 0;
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12407
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: TX packets rate'
+              type: DEPENDENT
+              key: 'qrouter.eth.port.packets.tx[{#PORT}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              units: pps
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), port = '{#PORT}';
+                      var st = (((root.ports_status || {}).result) || {});
+                      function find(arr) { arr = arr || []; for (var i = 0; i < arr.length; i++) if (String(arr[i].portName) === port) return arr[i]; return null; }
+                      var item = find(st.wan) || find(st.occupied) || find(st.lan) || find(st.vlan);
+                      return item && item.throughputPktTx ? item.throughputPktTx : 0;
+          trigger_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19401
+              expression: 'find(/Template Net QNAP QuRouter REST API/qrouter.eth.port.status[{#PORT}],,"iregexp","^(up|connected|online|link_up|1)$")=0 and {$QROUTER.ETH.LINK.REQUIRED:"{#PORT}"}=1'
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: Link is down'
+              priority: HIGH
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12005
+          name: 'QuRouter: Switch port statistics discovery'
+          type: DEPENDENT
+          key: qrouter.discovery.switch_port_stats
+          delay: '0'
+          master_item: {key: qrouter.api.aggregate}
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var root = JSON.parse(value);
+                  var arr = (((root.port_statistic || {}).result || {}).portStatistics || []);
+                  var cfg = (((root.ports_config || {}).result) || {});
+                  var cfgByPort = {};
+                  function putCfg(items) {
+                    items = items || [];
+                    for (var j = 0; j < items.length; j++) if (items[j].portName) cfgByPort[String(items[j].portName)] = items[j];
+                  }
+                  putCfg(cfg.wan);
+                  putCfg(cfg.lan);
+                  function speedClass(port) { return Number(port) >= 5 ? '10GbE' : '1GbE'; }
+                  function portDisplay(port) {
+                    var cfgItem = cfgByPort[String(port)] || {};
+                    var label = speedClass(port) + ' port ' + port;
+                    if (cfgItem.name) label += ' - ' + String(cfgItem.name);
+                    if (cfgItem.description && cfgItem.description !== cfgItem.name) label += ' (' + String(cfgItem.description) + ')';
+                    return label;
+                  }
+                  var data = [];
+                  for (var i = 0; i < arr.length; i++) {
+                    var iface = String(arr[i].iface || '');
+                    if (!iface) continue;
+                    var m = iface.match(/(\d+)$/);
+                    var port = m ? m[1] : iface;
+                    data.push({'{#IFACE}': iface, '{#PORT}': port, '{#PORTSPEED}': speedClass(port), '{#PORTDISPLAY}': portDisplay(port)});
+                  }
+                  return JSON.stringify({data: data});
+          item_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12501
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): RX byte rate'
+              type: DEPENDENT
+              key: 'qrouter.switch.rx.bytes.rate[{#IFACE}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: FLOAT
+              units: Bps
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), iface = '{#IFACE}';
+                      var arr = (((root.port_statistic || {}).result || {}).portStatistics || []);
+                      for (var i = 0; i < arr.length; i++) if (String(arr[i].iface) === iface) return arr[i].rx.rx_good_byte;
+                      return 0;
+                - type: CHANGE_PER_SECOND
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12502
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): TX byte rate'
+              type: DEPENDENT
+              key: 'qrouter.switch.tx.bytes.rate[{#IFACE}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: FLOAT
+              units: Bps
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), iface = '{#IFACE}';
+                      var arr = (((root.port_statistic || {}).result || {}).portStatistics || []);
+                      for (var i = 0; i < arr.length; i++) if (String(arr[i].iface) === iface) return arr[i].tx.tx_byte;
+                      return 0;
+                - type: CHANGE_PER_SECOND
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12503
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): RX errors'
+              type: DEPENDENT
+              key: 'qrouter.switch.rx.errors[{#IFACE}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), iface = '{#IFACE}';
+                      var arr = (((root.port_statistic || {}).result || {}).portStatistics || []);
+                      for (var i = 0; i < arr.length; i++) if (String(arr[i].iface) === iface) return arr[i].rx.rx_errors;
+                      return 0;
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12504
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): TX errors'
+              type: DEPENDENT
+              key: 'qrouter.switch.tx.errors[{#IFACE}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), iface = '{#IFACE}';
+                      var arr = (((root.port_statistic || {}).result || {}).portStatistics || []);
+                      for (var i = 0; i < arr.length; i++) if (String(arr[i].iface) === iface) return arr[i].tx.tx_errors;
+                      return 0;
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12505
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): RX dropped'
+              type: DEPENDENT
+              key: 'qrouter.switch.rx.dropped[{#IFACE}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), iface = '{#IFACE}';
+                      var arr = (((root.port_statistic || {}).result || {}).portStatistics || []);
+                      for (var i = 0; i < arr.length; i++) if (String(arr[i].iface) === iface) return arr[i].rx.rx_dropped;
+                      return 0;
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12506
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): TX dropped'
+              type: DEPENDENT
+              key: 'qrouter.switch.tx.dropped[{#IFACE}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              master_item: {key: qrouter.api.aggregate}
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var root = JSON.parse(value), iface = '{#IFACE}';
+                      var arr = (((root.port_statistic || {}).result || {}).portStatistics || []);
+                      for (var i = 0; i < arr.length; i++) if (String(arr[i].iface) === iface) return arr[i].tx.tx_dropped;
+                      return 0;
+          trigger_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19501
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.switch.rx.errors[{#IFACE}])>last(/Template Net QNAP QuRouter REST API/qrouter.switch.rx.errors[{#IFACE}],#2) and {$QROUTER.SWITCH.ERRORS.WARN}=1'
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): RX errors increased'
+              priority: WARNING
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19502
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.switch.tx.errors[{#IFACE}])>last(/Template Net QNAP QuRouter REST API/qrouter.switch.tx.errors[{#IFACE}],#2) and {$QROUTER.SWITCH.ERRORS.WARN}=1'
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): TX errors increased'
+              priority: WARNING
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19503
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.switch.rx.dropped[{#IFACE}])>last(/Template Net QNAP QuRouter REST API/qrouter.switch.rx.dropped[{#IFACE}],#2) and {$QROUTER.SWITCH.ERRORS.WARN}=1'
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): RX dropped increased'
+              priority: WARNING
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b19504
+              expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.switch.tx.dropped[{#IFACE}])>last(/Template Net QNAP QuRouter REST API/qrouter.switch.tx.dropped[{#IFACE}],#2) and {$QROUTER.SWITCH.ERRORS.WARN}=1'
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): TX dropped increased'
+              priority: WARNING
