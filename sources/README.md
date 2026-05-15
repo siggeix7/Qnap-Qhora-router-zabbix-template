@@ -55,7 +55,24 @@ python3 sources/tools/discover_qnap_api.py --base-url https://<ROUTER_IP>
 
 # 3. Prova gli endpoint con autenticazione
 python3 sources/tools/authenticated_probe_qnap.py --base-url https://<ROUTER_IP> --credentials credentials.txt --zabbix-candidates
+
+# 4. Esporta uno snapshot Markdown della configurazione del router
+python3 sources/tools/export_qrouter_config_md.py
+
+# Oppure passando gia URL e utente, con le altre opzioni richieste via prompt
+python3 sources/tools/export_qrouter_config_md.py --base-url https://<ROUTER_IP> --username admin --extended-discovery
 ```
+
+### Export Configurazione Markdown
+
+`export_qrouter_config_md.py` esegue un login locale QuRouter, interroga endpoint API `GET` e genera due file in `sources/artifacts/`:
+
+- `qrouter_config_<host>_<timestamp>.md`: report Markdown leggibile con sintesi, tabelle e JSON redatto
+- `qrouter_config_<host>_<timestamp>.json`: raccolta JSON redatta degli endpoint interrogati
+
+La modalita interattiva chiede IP/URL del router, username, password, se forzare il login e se eseguire la discovery estesa degli endpoint dal frontend. La discovery estesa scarica gli asset del frontend QuRouter e aggiunge altri endpoint `GET` rilevati, escludendo path dinamici, instabili o con parole associate ad azioni potenzialmente modificanti.
+
+Il report e uno snapshot documentale utile per change tracking e riconfigurazione manuale futura; non e un backup ufficiale ripristinabile.
 
 ## Note Di Sicurezza
 
@@ -63,4 +80,4 @@ python3 sources/tools/authenticated_probe_qnap.py --base-url https://<ROUTER_IP>
 - Usare solo `GET` per il monitoraggio. Qualsiasi `POST`/`PUT`/`DELETE` puo modificare la configurazione del router
 - Il login con `force=true` chiude le sessioni web eventualmente gia aperte
 - Non committare mai file con credenziali, token o cookie
-- I file JSON generati dai probe contengono dati sensibili della tua rete: non pubblicarli
+- I file Markdown e JSON generati dai probe/export contengono dati sensibili della tua rete: non pubblicarli
