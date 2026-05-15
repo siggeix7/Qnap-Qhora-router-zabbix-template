@@ -200,6 +200,83 @@ def crawl_assets(base_url: str) -> list[str]:
 API_PATH_RE = re.compile(r'["\'](/miro/api/v[12]/[^"\']+)["\']')
 API_TEMPLATE_RE = re.compile(r'["\'](/miro/api/v[12]/[^"\']*\$\{[^}]+\}[^"\']*)["\']')
 API_KEY_RE = re.compile(r'(?:I\.v[12]\.)?([A-Z][A-Za-z0-9]*(?:[A-Z][A-Za-z0-9]*)*)')
+MX_MAP_RE = re.compile(r'mx\("v([12])",\{')
+GROUP_MAP_RE = re.compile(r'(?:(?:"([^"]+)")|([A-Za-z_][A-Za-z0-9_-]*)):\{([^{}]*)\}')
+STRING_ENTRY_RE = re.compile(r'(?:(?:"([^"]+)")|([A-Za-z_][A-Za-z0-9_]*)):"([^"]*)"')
+
+
+def find_matching_brace(content: str, open_index: int) -> int | None:
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for index in range(open_index, len(content)):
+        char = content[index]
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if quote:
+            if char == quote:
+                quote = None
+            continue
+        if char in {'"', "'", "`"}:
+            quote = char
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def endpoint_from_map_entry(version: str, group: str | None, key: str, suffix: str, source: str) -> Endpoint | None:
+    suffix = suffix.strip().strip("/")
+    if "${" in suffix or "(" in suffix or ")" in suffix:
+        return None
+    relative = f"{group.strip('/')}/{suffix}" if group and suffix else (group or suffix)
+    relative = relative.strip().strip("/")
+    if not relative:
+        return None
+    path = f"/miro/api/{version}/{relative}"
+    return Endpoint(version=version, key=key, path=path, url_template=path, source=source, dynamic=False)
+
+
+def extract_mx_map_endpoints(content: str, source: str) -> list[Endpoint]:
+    endpoints: list[Endpoint] = []
+    for match in MX_MAP_RE.finditer(content):
+        version = f"v{match.group(1)}"
+        open_index = match.end() - 1
+        close_index = find_matching_brace(content, open_index)
+        if close_index is None:
+            continue
+        block = content[open_index + 1 : close_index]
+        group_spans: list[tuple[int, int]] = []
+        for group_match in GROUP_MAP_RE.finditer(block):
+            group = group_match.group(1) or group_match.group(2)
+            group_spans.append(group_match.span())
+            for entry_match in STRING_ENTRY_RE.finditer(group_match.group(3)):
+                key = entry_match.group(1) or entry_match.group(2)
+                endpoint = endpoint_from_map_entry(version, group, key, entry_match.group(3), source)
+                if endpoint:
+                    endpoints.append(endpoint)
+
+        top_level_parts: list[str] = []
+        cursor = 0
+        for start, end in group_spans:
+            top_level_parts.append(block[cursor:start])
+            cursor = end
+        top_level_parts.append(block[cursor:])
+        top_level = "".join(top_level_parts)
+        for entry_match in STRING_ENTRY_RE.finditer(top_level):
+            key = entry_match.group(1) or entry_match.group(2)
+            endpoint = endpoint_from_map_entry(version, None, key, entry_match.group(3), source)
+            if endpoint:
+                endpoints.append(endpoint)
+    return endpoints
 
 
 def extract_endpoints_from_js() -> list[Endpoint]:
@@ -217,6 +294,9 @@ def extract_endpoints_from_js() -> list[Endpoint]:
             continue
 
         source = js_file.name
+
+        for endpoint in extract_mx_map_endpoints(content, source):
+            endpoints[f"{endpoint.version}:{endpoint.path}"] = endpoint
 
         for match in API_TEMPLATE_RE.finditer(content):
             path = match.group(1)
@@ -265,11 +345,13 @@ def extract_operations(endpoints: list[Endpoint]) -> list[Operation]:
 
     operations: list[Operation] = []
     endpoint_lookup = {(e.version, e.key): e for e in endpoints}
+    endpoint_by_key = {e.key: e for e in endpoints}
 
     api_call_re = re.compile(
         r'(?:await\s+)?(?:api|this\.\$api|miroApi)\s*\.\s*(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']',
         re.MULTILINE,
     )
+    api_ref_call_re = re.compile(r'\b(?:[A-Za-z_$][\w$]*\.)?(get|post|put|delete|patch)\s*\(\s*I(?:\.v([12]))?\.([A-Za-z_][A-Za-z0-9_]*)')
 
     for js_file in sorted(js_dir.glob("*.js")):
         try:
@@ -301,6 +383,24 @@ def extract_operations(endpoints: list[Endpoint]) -> list[Operation]:
                 expression=match.group(0),
                 source_file=source,
                 offset=offset,
+            ))
+
+        for match in api_ref_call_re.finditer(content):
+            method = match.group(1).upper()
+            version = f"v{match.group(2)}" if match.group(2) else None
+            key = match.group(3)
+            endpoint = endpoint_lookup.get((version, key)) if version else endpoint_by_key.get(key)
+            if endpoint and version is None:
+                version = endpoint.version
+            operations.append(Operation(
+                method=method,
+                endpoint_ref=f"{version}:{key}" if version else key,
+                version=version,
+                key=key,
+                url_template=endpoint.path if endpoint else None,
+                expression=match.group(0),
+                source_file=source,
+                offset=match.start(),
             ))
 
     return operations

@@ -69,10 +69,21 @@ python3 sources/tools/export_qrouter_config_md.py --base-url https://<ROUTER_IP>
 
 `export_qrouter_config_md.py` esegue un login locale QuRouter, interroga endpoint API `GET` e genera due file nella cartella scelta al prompt o passata con `--output-dir`:
 
-- `qrouter_config_<host>_<timestamp>.md`: report Markdown leggibile organizzato per sistema, WAN, LAN/VLAN/bridge, DHCP, client, Wi-Fi, NAT/routing e sicurezza
+- `qrouter_config_<host>_<timestamp>.md`: report Markdown leggibile e sintetico organizzato per sistema, WAN/failover, LAN/VLAN/bridge, DHCP, Wi-Fi con VLAN associate, rotte statiche, NAT, VPN e sicurezza
 - `qrouter_config_<host>_<timestamp>.json`: raccolta JSON completa degli endpoint interrogati, senza redazione dei campi di configurazione
 
-La modalita interattiva chiede IP/URL del router, username, password, cartella di output, se forzare il login e se eseguire la discovery estesa degli endpoint dal frontend. Se la cartella non viene indicata, in modalita non interattiva il default e `~/qrouter_exports`, fuori dal repository. La discovery estesa scarica anche i chunk JavaScript dinamici del frontend QuRouter e aggiunge altri endpoint `GET` rilevati, escludendo path dinamici, instabili o con parole associate ad azioni potenzialmente modificanti.
+La modalita interattiva chiede IP/URL del router, username, password, cartella di output, se forzare il login e se eseguire la discovery estesa degli endpoint dal frontend. Se la cartella non viene indicata, in modalita non interattiva il default e `~/qrouter_exports`, fuori dal repository. La discovery estesa scarica anche i chunk JavaScript dinamici del frontend QuRouter, ricostruisce la mappa endpoint minificata e aggiunge altri endpoint `GET` rilevati, escludendo path dinamici, instabili, download/export o parole associate ad azioni potenzialmente modificanti.
+
+Il Markdown privilegia le informazioni utili per ricostruire manualmente la configurazione:
+
+- failover/load balancing WAN con tier, weight, failback e stato delle porte
+- interfacce LAN, VLAN, bridge, tag/untag e servizi DHCP
+- SSID Wi-Fi, bande, sicurezza e VLAN/interfaccia collegata
+- rotte statiche IPv4/IPv6 e policy route
+- server VPN QBelt, L2TP, OpenVPN, WireGuard e utenti configurati/online
+- NAT port forwarding, DDNS, accesso amministrativo e service port
+
+Gli endpoint raccolti ma non riassunti non vengono piu espansi automaticamente nel Markdown, per evitare blocchi di dati poco leggibili. Restano sempre nel JSON completo affiancato. Se serve includere anche i dettagli grezzi nel Markdown si puo usare `--include-raw-json`.
 
 Quando usi `--extended-discovery`, nella stessa cartella di output vengono create anche:
 
@@ -81,7 +92,7 @@ Quando usi `--extended-discovery`, nella stessa cartella di output vengono creat
 
 Queste directory sono necessarie per analizzare le API non documentate, ma non vengono piu generate dentro il repository. Possono contenere dettagli del router e della rete: trattale come dati privati.
 
-Di default il Markdown non include blocchi JSON raw: le risposte complete sono nel file `.json` affiancato. Se serve includere anche il JSON completo nel Markdown si puo usare `--include-raw-json`.
+Di default il Markdown non include blocchi JSON raw: le risposte complete sono nel file `.json` affiancato.
 
 Il report e uno snapshot documentale utile per change tracking e riconfigurazione manuale futura; non e un backup ufficiale ripristinabile.
 
