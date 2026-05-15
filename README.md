@@ -20,6 +20,15 @@ Il template e stato sviluppato e testato su QNAP QHora-301W con firmware QuRoute
 | --- | --- |
 | `zabbix_template_qnap_qurouter_7.0.yaml` | Template importabile in Zabbix 7.0 |
 
+## Documentazione Del Repository
+
+| File | Descrizione |
+| --- | --- |
+| `CHANGELOG.md` | Storico delle versioni e modifiche principali |
+| `CONTRIBUTING.md` | Linee guida per contributi e compatibility report |
+| `SECURITY.md` | Note di sicurezza e dati da non pubblicare |
+| `sources/` | Documentazione tecnica su API discovery e design del template |
+
 ## Funzionalita
 
 - Login automatico su `/miro/api/v1/login`.

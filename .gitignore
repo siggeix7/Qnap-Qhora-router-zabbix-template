@@ -1,0 +1,25 @@
+# Local credentials and secrets
+credentials.txt
+credenziali.txt
+.env
+*.env
+*.token
+*.cookie
+*.key
+*.pem
+
+# Generated discovery/probe outputs
+artifacts/
+raw/
+sources/artifacts/
+sources/raw/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
