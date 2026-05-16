@@ -653,6 +653,21 @@ zabbix_export:
               expression: 'avg(/Template Net QNAP QuRouter REST API/qrouter.port.throughput.tx[{#PORT}],10m)<{$QROUTER.WAN.TX.MIN.WARN:"{#PORT}"} and {$QROUTER.WAN.TX.MIN.WARN:"{#PORT}"}>0'
               name: 'QuRouter WAN {#PORTDISPLAY}: TX throughput is below threshold'
               priority: WARNING
+          graph_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12601
+              name: 'QuRouter WAN {#PORTDISPLAY}: Throughput'
+              graph_items:
+                - drawtype: GRADIENT_LINE
+                  color: 199C0D
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.port.throughput.rx[{#PORT}]'
+                - sortorder: '1'
+                  drawtype: BOLD_LINE
+                  color: F63100
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.port.throughput.tx[{#PORT}]'
         - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12003
           name: 'QuRouter: Wireless band discovery'
           type: DEPENDENT
@@ -706,6 +721,22 @@ zabbix_export:
               expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.wireless.bandwidth[{#BAND}])<>last(/Template Net QNAP QuRouter REST API/qrouter.wireless.bandwidth[{#BAND}],#2)'
               name: 'QuRouter wireless {#BAND}: Bandwidth changed'
               priority: INFO
+          graph_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12602
+              name: 'QuRouter wireless {#BAND}: Radio settings'
+              graph_items:
+                - drawtype: GRADIENT_LINE
+                  color: 199C0D
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.wireless.channel[{#BAND}]'
+                - sortorder: '1'
+                  drawtype: BOLD_LINE
+                  color: F63100
+                  yaxisside: RIGHT
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.wireless.bandwidth[{#BAND}]'
         - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12004
           name: 'QuRouter: Ethernet physical port discovery'
           type: DEPENDENT
@@ -890,6 +921,43 @@ zabbix_export:
               expression: 'find(/Template Net QNAP QuRouter REST API/qrouter.eth.port.status[{#PORT}],,"iregexp","^(up|connected|online|link_up|1)$")=0 and {$QROUTER.ETH.LINK.REQUIRED:"{#PORT}"}=1'
               name: 'QuRouter Ethernet {#PORTDISPLAY}: Link is down'
               priority: HIGH
+          graph_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12603
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: Throughput'
+              graph_items:
+                - drawtype: GRADIENT_LINE
+                  color: 199C0D
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.eth.port.throughput.rx[{#PORT}]'
+                - sortorder: '1'
+                  drawtype: BOLD_LINE
+                  color: F63100
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.eth.port.throughput.tx[{#PORT}]'
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12604
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: Packets rate'
+              graph_items:
+                - drawtype: GRADIENT_LINE
+                  color: 199C0D
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.eth.port.packets.rx[{#PORT}]'
+                - sortorder: '1'
+                  drawtype: BOLD_LINE
+                  color: F63100
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.eth.port.packets.tx[{#PORT}]'
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12605
+              name: 'QuRouter Ethernet {#PORTDISPLAY}: Link rate'
+              graph_items:
+                - drawtype: GRADIENT_LINE
+                  color: 199C0D
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.eth.port.link_rate[{#PORT}]'
         - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12005
           name: 'QuRouter: Switch port statistics discovery'
           type: DEPENDENT
@@ -1051,3 +1119,291 @@ zabbix_export:
               expression: 'last(/Template Net QNAP QuRouter REST API/qrouter.switch.tx.dropped[{#IFACE}])>last(/Template Net QNAP QuRouter REST API/qrouter.switch.tx.dropped[{#IFACE}],#2) and {$QROUTER.SWITCH.ERRORS.WARN}=1'
               name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): TX dropped increased'
               priority: WARNING
+          graph_prototypes:
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12606
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): Byte rate'
+              graph_items:
+                - drawtype: GRADIENT_LINE
+                  color: 199C0D
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.switch.rx.bytes.rate[{#IFACE}]'
+                - sortorder: '1'
+                  drawtype: BOLD_LINE
+                  color: F63100
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.switch.tx.bytes.rate[{#IFACE}]'
+            - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b12607
+              name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): Errors and drops'
+              graph_items:
+                - color: 199C0D
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.switch.rx.errors[{#IFACE}]'
+                - sortorder: '1'
+                  color: F63100
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.switch.tx.errors[{#IFACE}]'
+                - sortorder: '2'
+                  color: 00611C
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.switch.rx.dropped[{#IFACE}]'
+                - sortorder: '3'
+                  color: F7941D
+                  item:
+                    host: 'Template Net QNAP QuRouter REST API'
+                    key: 'qrouter.switch.tx.dropped[{#IFACE}]'
+      dashboards:
+        - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b17001
+          name: 'QuRouter overview'
+          pages:
+            - name: Overview
+              widgets:
+                - type: graph
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: GRAPH
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter: System load and memory'
+                    - type: STRING
+                      name: reference
+                      value: AAAAA
+                - type: graph
+                  x: '36'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: GRAPH
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter: CPU temperature'
+                    - type: STRING
+                      name: reference
+                      value: AAAAB
+                - type: graph
+                  'y': '5'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: GRAPH
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter: Memory usage'
+                    - type: STRING
+                      name: reference
+                      value: AAAAC
+                - type: graph
+                  x: '36'
+                  'y': '5'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: GRAPH
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter: Clients and events'
+                    - type: STRING
+                      name: reference
+                      value: AAAAD
+                - type: graph
+                  'y': '10'
+                  width: '72'
+                  height: '5'
+                  fields:
+                    - type: GRAPH
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter: Health states'
+                    - type: STRING
+                      name: reference
+                      value: AAAAE
+            - name: Interfaces
+              widgets:
+                - type: graphprototype
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: columns
+                      value: '1'
+                    - type: GRAPH_PROTOTYPE
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter WAN {#PORTDISPLAY}: Throughput'
+                    - type: STRING
+                      name: reference
+                      value: AAAAF
+                - type: graphprototype
+                  x: '36'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: columns
+                      value: '1'
+                    - type: GRAPH_PROTOTYPE
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter Ethernet {#PORTDISPLAY}: Throughput'
+                    - type: STRING
+                      name: reference
+                      value: AAAAG
+                - type: graphprototype
+                  'y': '5'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: columns
+                      value: '1'
+                    - type: GRAPH_PROTOTYPE
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter Ethernet {#PORTDISPLAY}: Packets rate'
+                    - type: STRING
+                      name: reference
+                      value: AAAAH
+                - type: graphprototype
+                  x: '36'
+                  'y': '5'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: columns
+                      value: '1'
+                    - type: GRAPH_PROTOTYPE
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): Byte rate'
+                    - type: STRING
+                      name: reference
+                      value: AAAAI
+                - type: graphprototype
+                  'y': '10'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: columns
+                      value: '1'
+                    - type: GRAPH_PROTOTYPE
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter switch {#PORTDISPLAY} ({#IFACE}): Errors and drops'
+                    - type: STRING
+                      name: reference
+                      value: AAAAJ
+                - type: graphprototype
+                  x: '36'
+                  'y': '10'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: columns
+                      value: '1'
+                    - type: GRAPH_PROTOTYPE
+                      name: graphid.0
+                      value:
+                        host: 'Template Net QNAP QuRouter REST API'
+                        name: 'QuRouter wireless {#BAND}: Radio settings'
+                    - type: STRING
+                      name: reference
+                      value: AAAAK
+  graphs:
+    - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b18001
+      name: 'QuRouter: System load and memory'
+      ymin_type_1: FIXED
+      ymax_type_1: FIXED
+      graph_items:
+        - drawtype: GRADIENT_LINE
+          color: 199C0D
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.system.cpu_load
+        - sortorder: '1'
+          drawtype: BOLD_LINE
+          color: F63100
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.system.memory.pused
+    - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b18002
+      name: 'QuRouter: CPU temperature'
+      ymin_type_1: FIXED
+      graph_items:
+        - drawtype: GRADIENT_LINE
+          color: 199C0D
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.system.cpu_temperature
+    - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b18003
+      name: 'QuRouter: Memory usage'
+      graph_items:
+        - drawtype: GRADIENT_LINE
+          color: 199C0D
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.system.memory.used
+        - sortorder: '1'
+          drawtype: BOLD_LINE
+          color: F63100
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.system.memory.total
+    - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b18004
+      name: 'QuRouter: Clients and events'
+      graph_items:
+        - drawtype: GRADIENT_LINE
+          color: 199C0D
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.clients.total
+        - sortorder: '1'
+          drawtype: BOLD_LINE
+          color: F63100
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.eventlogs.total
+    - uuid: 8c0c0d1b81c34c6f9d4fd1b7f7b18005
+      name: 'QuRouter: Health states'
+      graph_items:
+        - color: 199C0D
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.api.failed
+        - sortorder: '1'
+          color: F63100
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.network.internet_connected
+        - sortorder: '2'
+          color: 00611C
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.quwan.cloud_agent_running
+        - sortorder: '3'
+          color: F7941D
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.firmware.upgrade_available
+        - sortorder: '4'
+          color: FC6EA3
+          item:
+            host: 'Template Net QNAP QuRouter REST API'
+            key: qrouter.system.cpu_temperature_high

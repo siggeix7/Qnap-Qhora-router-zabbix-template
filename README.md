@@ -39,6 +39,7 @@ Il template e stato sviluppato e testato su QNAP QHora-301W con firmware QuRoute
 - Discovery porte Ethernet fisiche.
 - Discovery statistiche switch `swdev1..swdev6`.
 - Discovery bande Wi-Fi.
+- Grafici statici, prototipi di grafico LLD e dashboard host per Zabbix.
 - Trigger per stato API, Internet, WAN, porte, temperatura, memoria, firmware e reboot.
 
 ## Metriche Monitorate
@@ -54,6 +55,12 @@ Il template e stato sviluppato e testato su QNAP QHora-301W con firmware QuRoute
 | Wi-Fi | modalita Wi-Fi, canale e bandwidth per banda |
 | Client | numero totale client conosciuti |
 | Log | numero totale eventi |
+
+## Grafici E Dashboard
+
+- Grafici statici per CPU/memoria, temperatura CPU, uso memoria, client/eventi e stati di salute.
+- Prototipi di grafico per throughput WAN, throughput/packet rate/link rate Ethernet, statistiche switch e impostazioni radio Wi-Fi.
+- Dashboard host `QuRouter overview` con pagine `Overview` e `Interfaces`.
 
 ## Import In Zabbix
 

@@ -74,6 +74,16 @@ Esempio di nome item risultante:
 - `QuRouter Ethernet 1GbE port 2 - LAN1 (MNG): Link rate`
 - `QuRouter Ethernet 10GbE port 5 - Open Fiber: Link rate`
 
+## Visualizzazione
+
+Il template include grafici e una dashboard host per usare direttamente i dati raccolti dopo l'import:
+
+- Grafici statici top-level per carico CPU/memoria, temperatura, uso memoria, client/eventi e stati di salute.
+- Prototipi di grafico nelle discovery per throughput WAN, throughput/packet rate/link rate Ethernet, byte rate ed errori/dropped switch, canale/bandwidth Wi-Fi.
+- Dashboard `QuRouter overview` con pagina `Overview` per lo stato generale e pagina `Interfaces` per i grafici LLD.
+
+I grafici fanno riferimento solo a item numerici gia presenti nel template; non aggiungono chiamate API o dependent item.
+
 ## Trigger
 
 ### Trigger Semplici

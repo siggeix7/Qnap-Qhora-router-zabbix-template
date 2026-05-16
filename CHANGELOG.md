@@ -2,6 +2,12 @@
 
 All notable changes to this project should be documented here.
 
+## Unreleased
+
+- Added template graphs for system, memory, clients/events, and health state metrics.
+- Added LLD graph prototypes for WAN, Ethernet, switch, and Wi-Fi discovery rules.
+- Added host dashboard `QuRouter overview` with overview and interface pages.
+
 ## 1.0.0 - Initial Public Release
 
 - Added Zabbix 7.0 template for QNAP QuRouter monitoring.
